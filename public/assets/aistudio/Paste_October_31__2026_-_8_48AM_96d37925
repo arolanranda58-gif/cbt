@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+ <meta charset="utf-8"/>
+ <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+ <title>Ujian Online</title>
+ <!-- Bootstrap 5 -->
+ <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet"/>
+ <!-- FontAwesome -->
+ <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+ <!-- SweetAlert2 -->
+ <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+ <style>
+ body, html {
+   height: 100%;
+   margin: 0;
+   background: linear-gradient(135deg, #f8f9fc, #dbeafe);
+   font-family: 'Segoe UI', sans-serif;
+   user-select: none; /* Mencegah seleksi teks */
+   -webkit-user-select: none;
+ }
+ #loginBox {
+   max-width:420px;
+   width:94%;
+   margin:auto;
+   position: absolute;
+   top:50%;
+   left:50%;
+   transform: translate(-50%, -50%);
+   background: #ffffff;
+   border-radius: 15px;
+   box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+   padding: 30px;
+ }
+ #loginBox img.logo { max-width:85px; display:block; margin:0 auto 15px auto; }
+ .small-muted { font-size:0.9rem; color:#6c757d; }
+ .overlay-loading {
+   position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+   background:rgba(255,255,255,0.7); z-index:9999; display:none;
+ }
+ #studentContent {
+   display:none;
+   height:100vh;
+   width:100%;
+   overflow-y:auto;
+   padding:15px;
+   background: linear-gradient(135deg,#e0f2fe,#f8fafc);
+ }
+ .navbar-top {
+   background: #2563eb;
+   color: #fff;
+   padding: 12px 20px;
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   border-radius: 10px;
+   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+ }
+ .navbar-top h5 { margin: 0; font-weight: 600; }
+ .profile-menu { position: relative; display: flex; align-items: center; cursor: pointer; }
+ .profile-icon {
+   width: 38px; height: 38px; background-color: #1e40af; border-radius: 50%;
+   display: flex; justify-content: center; align-items: center; font-size: 18px; color: white;
+ }
+ .student-name { margin-left: 10px; font-weight: 500; color: #fff; user-select: none; }
+ .dropdown-menu-profile {
+   position: absolute; top: 50px; right: 0; background: white; border-radius: 8px;
+   box-shadow: 0 4px 10px rgba(0,0,0,0.1); min-width: 150px; display: none;
+   flex-direction: column; z-index: 10;
+ }
+ .dropdown-menu-profile.show { display: flex; animation: fadeIn 0.2s ease-in-out; }
+ .dropdown-menu-profile button {
+   background: none; border: none; text-align: left; padding: 10px 15px; font-size: 14px; color: #333; width: 100%;
+ }
+ .card-identitas {
+   background:white; border-radius:16px; box-shadow:0 4px 20px rgba(0,0,0,0.05); padding:20px; margin-top:20px;
+ }
+ .identitas-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:12px 20px; }
+ .identitas-item { background:#f1f5f9; border-radius:10px; padding:12px 16px; }
+ .identitas-item strong { display:block; color:#0f172a; font-size:0.85rem; margin-bottom:4px; }
+ .btn-ujian { margin-top:25px; padding:12px 28px; border-radius:50px; font-weight:600; }
+
+ /* PERBAIKAN RESPONSIVE IFRAME (MENCEGAH SALAH KLIK JAWABAN) */
+ #examArea { margin-top:15px; height: calc(100vh - 120px); display: flex; flex-direction: column; }
+ .iframe-wrapper {
+   flex: 1;
+   width: 100%;
+   height: 100%;
+   border-radius: 12px;
+   overflow: hidden;
+   box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+   background: #fff;
+ }
+ .iframe-wrapper iframe {
+   width: 100%;
+   height: 100%;
+   border: none;
+ }
+
+ /* ADMIN LAYOUT */
+ #adminShell { display: none; height: 100vh; overflow: hidden; }
+ #adminSidebar {
+   width: 260px; height: 100vh; background: #2563eb; color: #fff; position: fixed;
+   left: 0; top: 0; bottom: 0; padding: 20px 16px; box-shadow: 3px 0 10px rgba(0, 0, 0, 0.15);
+   transition: transform 0.25s ease; z-index: 1051; display: flex; flex-direction: column;
+ }
+ #adminSidebar .brand { display: flex; flex-direction: column; align-items: center; margin-bottom: 18px; }
+ #adminSidebar .nav-link { color: #e0e7ff; padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; text-decoration: none; display: flex; align-items: center;}
+ #adminSidebar .nav-link.active { background: #1e40af; color: #fff; font-weight: 600; }
+ #adminMain { margin-left: 260px; padding: 18px; transition: margin-left 0.25s ease; overflow-y: auto; height: 100vh; }
+ #adminMain.full { margin-left: 0; }
+ .admin-topbar { display: flex; align-items: center; justify-content: space-between; background-color: #2563eb; color: white; padding: 10px 15px; border-radius: 8px; }
+ .stat-card { border-radius: 12px; padding: 14px; background: #fff; box-shadow: 0 6px 18px rgba(2, 6, 23, 0.06); }
+ .table-wrap { width: 100%; overflow-x: auto; }
+
+ @media (max-width: 991.98px) {
+   #adminSidebar { transform: translateX(-100%); }
+   #adminSidebar.show { transform: translateX(0); }
+   #adminMain { margin-left: 0 !important; }
+ }
+ #timerDisplay { font-family: 'Courier New', monospace; letter-spacing: 2px; }
+ .btn-finish-exam {
+   background: linear-gradient(135deg, #ff4e50, #f9d423); color: white; border: none;
+   font-weight: 600; padding: 8px 16px; border-radius: 50px; display: inline-flex; align-items: center; gap: 8px;
+ }
+ </style>
+</head>
+<body>
+ <!-- Loading -->
+ <div class="overlay-loading" id="loadingOverlay">
+   <div class="text-center">
+     <div class="spinner-border text-primary" role="status"></div>
+     <div class="mt-2 fw-semibold">Memproses...</div>
+   </div>
+ </div>
+
+ <!-- LOGIN BOX -->
+ <div id="loginBox" class="text-center">
+   <a id="logoLink" target="_blank"><img src="" alt="Logo" class="logo" id="appLogo" /></a>
+   <h3 id="appTitle" class="mb-1 text-primary"><b>Ujian Online</b></h3>
+   <p id="appSubtitle" class="small-muted mb-3"></p>
+   <div class="mb-2 text-start">
+     <label class="form-label"><b>Role Pengguna</b></label>
+     <select id="roleSelect" class="form-select">
+       <option value="siswa" selected>Siswa</option>
+       <option value="admin">Admin</option>
+     </select>
+   </div>
+   <!-- Form Siswa -->
+   <div id="formSiswa">
+     <div class="mb-2 text-start" id="nisnGroup">
+       <label class="form-label"><b>NOMOR PESERTA UJIAN</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-id-card"></i></span>
+         <input id="nisnInput" class="form-control" placeholder="Masukkan Nomor Peserta Ujian" />
+       </div>
+     </div>
+     <div class="mb-2 text-start">
+       <label class="form-label"><b>Kelas</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-layer-group"></i></span>
+         <select id="tingkatSelect" class="form-select">
+           <option value="">-- Pilih Kelas --</option>
+         </select>
+       </div>
+     </div>
+     <div class="mb-2 text-start">
+       <label class="form-label"><b>Ruangan</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-school"></i></span>
+         <select id="kelasSelect" class="form-select">
+           <option value="">-- Pilih Ruangan --</option>
+         </select>
+       </div>
+     </div>
+     <div class="mb-3 text-start">
+       <label class="form-label"><b>Mata Pelajaran</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-book"></i></span>
+         <select id="mataSelect" class="form-select">
+           <option value="">-- Pilih Mata Pelajaran --</option>
+         </select>
+       </div>
+     </div>
+     <button id="loginSiswaBtn" class="btn btn-primary w-100"><i class="fa fa-sign-in-alt me-2"></i>Login Siswa</button>
+   </div>
+
+   <!-- Form Admin -->
+   <div id="formAdmin" style="display:none;">
+     <div class="mb-2 text-start">
+       <label class="form-label"><b>Username</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-user-shield"></i></span>
+         <input id="adminUser" type="text" class="form-control" placeholder="Username" />
+       </div>
+     </div>
+     <div class="mb-3 text-start">
+       <label class="form-label"><b>Password</b></label>
+       <div class="input-group">
+         <span class="input-group-text"><i class="fa fa-lock"></i></span>
+         <input id="adminPass" type="password" class="form-control" placeholder="Password" />
+       </div>
+     </div>
+     <button id="loginAdminBtn" class="btn btn-secondary w-100"><i class="fa fa-user-shield me-2"></i>Login Admin</button>
+   </div>
+ </div>
+
+ <!-- STUDENT CONTENT -->
+ <div id="studentContent" class="container-fluid">
+   <div class="navbar-top">
+     <h5><i class="fa-solid fa-user-graduate me-2"></i>Panel Ujian Siswa</h5>
+     <div class="profile-menu" id="profileMenu">
+       <div class="profile-icon"><i class="fa-solid fa-user"></i></div>
+       <span class="student-name" id="studentName">Siswa</span>
+       <div class="dropdown-menu-profile" id="profileDropdown">
+         <button id="logoutBtn" class="text-secondary"><i class="fa-solid fa-right-from-bracket me-2 text-danger"></i>Logout</button>
+       </div>
+     </div>
+   </div>
+   <div class="card-identitas">
+     <h5 class="text-primary mb-3"><i class="fa-solid fa-id-card me-2"></i>Data Identitas Peserta</h5>
+     <div class="identitas-grid">
+       <div class="identitas-item"><strong>Nama:</strong><span id="dNama"></span></div>
+       <div class="identitas-item"><strong>Nomor peserta ujian:</strong><span id="dNISN"></span></div>
+       <div class="identitas-item"><strong>Kelas:</strong><span id="dTingkat"></span></div>
+       <div class="identitas-item"><strong>Ruangan:</strong><span id="dKelas"></span></div>
+       <div class="identitas-item"><strong>Mata Pelajaran:</strong><span id="dMata"></span></div>
+       <div class="identitas-item"><strong>Waktu Ujian:</strong><span id="dWaktu"></span> menit</div>
+     </div>
+     <div class="text-center">
+       <button id="mulaiUjianBtn" class="btn btn-success btn-ujian shadow-sm">
+         <i class="fa fa-play me-2"></i>Mulai Ujian
+       </button>
+     </div>
+   </div>
+
+   <div id="examArea" style="display:none;">
+     <div class="exam-header bg-light border rounded p-2 mb-2 shadow-sm">
+       <div class="d-flex justify-content-between align-items-center">
+         <div class="d-flex align-items-center gap-3">
+           <i class="fa-solid fa-clock text-primary fs-4"></i>
+           <div>
+             <div class="fw-bold text-secondary small">WAKTU TERSISA</div>
+             <div id="timerDisplay" class="fs-5 fw-semibold text-dark">--:--:--</div>
+           </div>
+         </div>
+         <button id="finishBtn" class="btn-finish-exam">
+           <i class="fa-solid fa-flag-checkered"></i> Selesai Ujian
+         </button>
+       </div>
+       <div class="progress mt-2" style="height: 6px;">
+         <div id="timeProgress" class="progress-bar bg-success" style="width: 100%; transition: width 1s linear;"></div>
+       </div>
+     </div>
+     <div class="iframe-wrapper">
+       <iframe id="soalIframe" src="" frameborder="0" allowfullscreen="true"></iframe>
+     </div>
+   </div>
+ </div>
+
+ <!-- ADMIN SHELL -->
+ <div id="adminShell">
+   <div id="sidebarOverlay" onclick="closeSidebar()"></div>
+   <div id="adminSidebar">
+     <button id="closeSidebarBtn" class="btn text-white position-absolute end-0 top-0 m-2"><i class="fa fa-times"></i></button>
+     <div class="brand text-center mb-3">
+       <i class="fa fa-graduation-cap text-white mb-2" style="font-size: 2rem;"></i>
+       <div class="brand-text">Admin Ujian Online</div>
+     </div>
+     <hr />
+     <nav class="nav flex-column">
+       <a href="#" class="nav-link active" id="menuDashboard"><i class="fa fa-tachometer-alt me-2"></i> Dashboard</a>
+       <a href="#" class="nav-link" id="menuDataPeserta"><i class="fa fa-users me-2"></i> Data Peserta</a>
+       <a href="#" class="nav-link" id="menuDataSoal"><i class="fa fa-file-alt me-2"></i> Data Soal</a>
+     </nav>
+     <div class="mt-auto mb-3">
+       <button id="logoutAdminBtn" class="btn btn-light btn-sm w-100"><i class="fa fa-sign-out-alt me-1"></i> Logout</button>
+     </div>
+   </div>
+   <div id="adminMain">
+     <div class="admin-topbar mb-3">
+       <div>
+         <button id="hamburgerBtn" class="btn btn-sm btn-light me-2"><i class="fa fa-bars"></i></button>
+         <strong id="topbarTitle">Admin Ujian Online</strong>
+       </div>
+       <div><span id="adminWelcome">Halo, Admin</span></div>
+     </div>
+     <div id="adminContentArea">
+       <div id="adminDashboard">
+         <div class="row g-3">
+           <div class="col-md-4">
+             <div class="stat-card">
+               <h6>Jumlah Peserta</h6>
+               <div class="fs-3" id="countTotal">0</div>
+             </div>
+           </div>
+           <div class="col-md-4">
+             <div class="stat-card">
+               <h6>Peserta Aktif</h6>
+               <div class="fs-3" id="countAktif">0</div>
+             </div>
+           </div>
+           <div class="col-md-4">
+             <div class="stat-card">
+               <h6>Peserta Tidak Aktif</h6>
+               <div class="fs-3" id="countTidakAktif">0</div>
+             </div>
+           </div>
+         </div>
+       </div>
+       <div id="adminDataPeserta" style="display:none;">
+         <div class="card p-3 mt-3 shadow-sm">
+           <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+             <h5 class="mb-2 mb-sm-0">Data Peserta</h5>
+             <button class="btn btn-primary btn-sm" id="btnTambahPeserta"><i class="fa fa-plus me-1"></i> Tambah</button>
+           </div>
+           <div id="tablePesertaWrap" class="table-wrap mt-2"></div>
+         </div>
+       </div>
+       <div id="adminDataSoal" style="display:none;">
+         <div class="card p-3 mt-3">
+           <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+             <h5 class="mb-2 mb-sm-0">Data Soal</h5>
+             <button class="btn btn-primary btn-sm" id="btnTambahSoal"><i class="fa fa-plus me-1"></i> Tambah</button>
+           </div>
+           <div id="tableSoalWrap" class="table-wrap mt-2"></div>
+         </div>
+       </div>
+     </div>
+   </div>
+ </div>
+
+ <!-- MODALS (Sama seperti struktur modal sebelumnya) -->
+ <div class="modal fade" id="modalTambahPeserta" tabindex="-1">
+   <div class="modal-dialog modal-dialog-centered">
+     <div class="modal-content">
+       <div class="modal-header bg-primary text-white">
+         <h5 class="modal-title">Tambah Data Peserta</h5>
+         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+       </div>
+       <div class="modal-body">
+         <div class="mb-2"><label class="form-label small">Nomor</label><input id="peserta_colA" class="form-control"></div>
+         <div class="mb-2"><label class="form-label small">NISN</label><input id="peserta_nisn" class="form-control"></div>
+         <div class="mb-2"><label class="form-label small">Nama</label><input id="peserta_nama" class="form-control"></div>
+         <div class="mb-2">
+           <label class="form-label small">Tingkat</label>
+           <select id="peserta_tingkat" class="form-select">
+             <option value="">-- Pilih Tingkat --</option>
+             <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+           </select>
+         </div>
+         <div class="mb-2"><label class="form-label small">Kelas</label><input id="peserta_kelas" class="form-control"></div>
+         <div class="mb-2">
+           <label class="form-label small">Status</label>
+           <select id="peserta_status" class="form-select"><option value="Aktif" selected>Aktif</option><option value="Tidak Aktif">Tidak Aktif</option></select>
+         </div>
+       </div>
+       <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button><button class="btn btn-primary" id="simpanPesertaBaru">Simpan</button></div>
+     </div>
+   </div>
+ </div>
+
+ <div class="modal fade" id="modalTambahSoal" tabindex="-1">
+   <div class="modal-dialog modal-dialog-centered">
+     <div class="modal-content">
+       <div class="modal-header bg-primary text-white">
+         <h5 class="modal-title">Tambah Data Soal</h5>
+         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+       </div>
+       <div class="modal-body">
+         <div class="mb-2"><label class="form-label small">Nomor</label><input id="soal_colA" class="form-control"></div>
+         <div class="mb-2">
+           <label class="form-label small">Tingkat</label>
+           <select id="soal_tingkat" class="form-select">
+             <option value="">-- Pilih Tingkat --</option>
+             <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+           </select>
+         </div>
+         <div class="mb-2"><label class="form-label small">Mata Pelajaran</label><input id="soal_mata" class="form-control"></div>
+         <div class="mb-2"><label class="form-label small">Link Soal</label><input id="soal_link" class="form-control"></div>
+         <div class="mb-2"><label class="form-label small">Token</label><input id="soal_token" class="form-control"></div>
+         <div class="mb-2"><label class="form-label small">Waktu (menit)</label><input id="soal_waktu" class="form-control" type="number"></div>
+       </div>
+       <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button><button class="btn btn-primary" id="simpanSoalBaru">Simpan</button></div>
+     </div>
+   </div>
+ </div>
+
+ <div class="modal fade" id="tokenModal" tabindex="-1" aria-hidden="true">
+   <div class="modal-dialog modal-dialog-centered">
+     <div class="modal-content">
+       <div class="modal-header"><h5 class="modal-title">Masukkan Token Ujian</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+       <div class="modal-body"><input id="tokenInput" class="form-control" placeholder="Token"/></div>
+       <div class="modal-footer"><button id="tokenSubmitBtn" class="btn btn-primary">Submit</button></div>
+     </div>
+   </div>
+ </div>
+
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+ <script>
+   let currentStudent = null;
+   let examTimer = null;
+   let remainingSeconds = 0;
+   let totalSeconds = 0;
+   let examStarted = false;
+   let adminName = '';
+
+   document.addEventListener('DOMContentLoaded', function(){
+     showLoading(true);
+     google.script.run.withSuccessHandler(initUI).getLogoAndTitles();
+     google.script.run.withSuccessHandler(populateLevels).getLevels();
+     showLoading(false);
+
+     document.getElementById('roleSelect').addEventListener('change', function(){
+       const r = this.value;
+       document.getElementById('formSiswa').style.display = r === 'siswa' ? '' : 'none';
+       document.getElementById('formAdmin').style.display = r === 'siswa' ? 'none' : '';
+     });
+
+     document.getElementById('tingkatSelect').addEventListener('change', function(){
+       const t = this.value;
+       if(!t) return;
+       showLoading(true);
+       google.script.run.withSuccessHandler(function(classes){
+         fillSelect('kelasSelect', classes, '-- Pilih Kelas --');
+         showLoading(false);
+       }).getClassesForLevel(t);
+       google.script.run.withSuccessHandler(function(subjects){
+         fillSelect('mataSelect', subjects, '-- Pilih Mata Pelajaran --');
+       }).getSubjectsForLevel(t);
+     });
+
+     document.getElementById('loginSiswaBtn').addEventListener('click', onLoginSiswa);
+     document.getElementById('loginAdminBtn').addEventListener('click', onLoginAdmin);
+     document.getElementById('mulaiUjianBtn').addEventListener('click', onMulaiUjian);
+     document.getElementById('tokenSubmitBtn').addEventListener('click', submitToken);
+     document.getElementById('logoutBtn').addEventListener('click', logoutToLogin);
+     document.getElementById('logoutAdminBtn').addEventListener('click', logoutToLogin);
+     document.getElementById('finishBtn').addEventListener('click', () => finishExam(true));
+     
+     // Setup Pengaman Ujian
+     setupExamSecurity();
+   });
+
+   function showLoading(show){ document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none'; }
+   function initUI(data){
+     if(data){
+       document.getElementById('appLogo').src = data.logoUrl || '';
+       document.getElementById('logoLink').href = data.logoUrl || '#';
+       document.getElementById('appTitle').textContent = data.title || 'Ujian Online';
+       document.getElementById('appSubtitle').textContent = data.subtitle || '';
+     }
+   }
+   function populateLevels(levels){ fillSelect('tingkatSelect', levels, '-- Pilih Tingkat --'); }
+   function fillSelect(id, arr, placeholder){
+     const sel = document.getElementById(id);
+     sel.innerHTML = '';
+     const opt0 = document.createElement('option');
+     opt0.value = ''; opt0.textContent = placeholder || '-- Pilih --';
+     sel.appendChild(opt0);
+     (arr||[]).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
+   }
+
+   /* ---------- FULLSCREEN HANDLER ---------- */
+   function enterFullScreen() {
+     const elem = document.documentElement;
+     if (elem.requestFullscreen) { elem.requestFullscreen(); }
+     else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); }
+     else if (elem.msRequestFullscreen) { elem.msRequestFullscreen(); }
+   }
+
+   function exitFullScreen() {
+     if (document.exitFullscreen) { document.exitFullscreen(); }
+     else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+     else if (document.msExitFullscreen) { document.msExitFullscreen(); }
+   }
+
+   /* ---------- SISTEM KEAMANAN (ANTI CHEAT) ---------- */
+   function setupExamSecurity() {
+     // 1. Blokir Klik Kanan
+     document.addEventListener('contextmenu', e => {
+       if (examStarted) e.preventDefault();
+     });
+
+     // 2. Blokir Tombol Pintas & Shortcut Keyboard (Alt+Tab, Ctrl+C, F12, dsb.)
+     document.addEventListener('keydown', e => {
+       if (!examStarted) return;
+       if (e.key === "Tab" || e.altKey || e.ctrlKey || e.metaKey || e.key === "F12" || (e.ctrlKey && e.shiftKey && e.key === 'I')) {
+         e.preventDefault();
+         triggerViolation("Kombinasi tombol keyboard dilarang selama ujian!");
+       }
+     });
+
+     // 3. Deteksi Berpindah Tab / Window Blur
+     window.addEventListener('blur', () => {
+       if (examStarted) triggerViolation("Anda meninggalkan area ujian / membuka aplikasi lain!");
+     });
+
+     document.addEventListener('visibilitychange', () => {
+       if (document.hidden && examStarted) {
+         triggerViolation("Anda berpindah tab/layar!");
+       }
+     });
+   }
+
+   function triggerViolation(reason) {
+     if (!examStarted || !currentStudent) return;
+     examStarted = false;
+     if (examTimer) clearInterval(examTimer);
+
+     // Ubah status siswa menjadi Tidak Aktif di spreadsheet
+     google.script.run.setStatusInactive(currentStudent.nisn);
+
+     Swal.fire({
+       icon: 'error',
+       title: 'Pelanggaran Terdeteksi!',
+       text: reason + ' Status ujian Anda telah dinonaktifkan.',
+       allowOutsideClick: false,
+       allowEscapeKey: false
+     }).then(() => {
+       exitFullScreen();
+       logoutToLogin();
+     });
+   }
+
+   /* ---------- LOGIN & NAVIGASI ---------- */
+   function onLoginSiswa(){
+     const nisn = document.getElementById('nisnInput').value.trim();
+     const tingkat = document.getElementById('tingkatSelect').value;
+     const kelas = document.getElementById('kelasSelect').value;
+     const mata = document.getElementById('mataSelect').value;
+
+     if(!nisn || !tingkat || !kelas || !mata){
+       Swal.fire({ icon:'warning', title:'Lengkapi Form', text:'Isi seluruh kolom terlebih dahulu.' });
+       return;
+     }
+
+     showLoading(true);
+     google.script.run.withSuccessHandler(function(resp){
+       showLoading(false);
+       if(resp.success){
+         currentStudent = resp.data;
+         document.getElementById('studentName').textContent = currentStudent.nama;
+         document.getElementById('loginBox').style.display = 'none';
+         document.getElementById('studentContent').style.display = 'block';
+         document.getElementById('dNama').textContent = currentStudent.nama;
+         document.getElementById('dNISN').textContent = currentStudent.nisn;
+         document.getElementById('dTingkat').textContent = currentStudent.tingkat;
+         document.getElementById('dKelas').textContent = currentStudent.kelas;
+         document.getElementById('dMata').textContent = currentStudent.mataPelajaran;
+         document.getElementById('dWaktu').textContent = currentStudent.waktuMenit || 0;
+       } else {
+         Swal.fire({ icon:'error', title:'Gagal', text: resp.message || 'Autentikasi gagal.' });
+       }
+     }).authenticateStudent(nisn, tingkat, kelas, mata);
+   }
+
+   function onLoginAdmin(){
+     const user = document.getElementById('adminUser').value.trim();
+     const pass = document.getElementById('adminPass').value || '';
+     if(!user || !pass){ Swal.fire({ icon:'warning', title:'Lengkapi', text:'Masukkan username & password.' }); return; }
+
+     showLoading(true);
+     google.script.run.withSuccessHandler(function(resp){
+       showLoading(false);
+       if(resp.success){
+         adminName = resp.name || user;
+         document.getElementById('loginBox').style.display = 'none';
+         document.getElementById('adminShell').style.display = 'block';
+         document.getElementById('adminWelcome').textContent = 'Halo, ' + adminName;
+         loadDashboardCounts();
+       } else {
+         Swal.fire({ icon:'error', title:'Gagal', text: resp.message });
+       }
+     }).authenticateAdmin(user, pass);
+   }
+
+   function logoutToLogin(){
+     currentStudent = null;
+     examStarted = false;
+     if(examTimer) clearInterval(examTimer);
+     exitFullScreen();
+
+     document.getElementById('studentContent').style.display = 'none';
+     document.getElementById('adminShell').style.display = 'none';
+     document.getElementById('loginBox').style.display = 'block';
+     document.getElementById('soalIframe').src = '';
+     document.getElementById('examArea').style.display = 'none';
+     document.querySelector('.card-identitas').style.display = 'block';
+   }
+
+   function onMulaiUjian(){
+     if(!currentStudent) return;
+     new bootstrap.Modal(document.getElementById('tokenModal')).show();
+   }
+
+   function submitToken(){
+     const token = document.getElementById('tokenInput').value.trim();
+     if(!token){ Swal.fire({ icon:'warning', title:'Token Kosong', text:'Masukkan token ujian.' }); return; }
+
+     showLoading(true);
+     google.script.run.withSuccessHandler(function(resp){
+       showLoading(false);
+       if(resp.success){
+         bootstrap.Modal.getInstance(document.getElementById('tokenModal')).hide();
+         startExam(resp.durationMinutes, resp.link);
+       } else {
+         Swal.fire({ icon:'error', title:'Token Salah', text: resp.message });
+       }
+     }).validateToken(currentStudent.tingkat, currentStudent.mataPelajaran, token);
+   }
+
+   function startExam(durationMinutes, link) {
+     totalSeconds = Math.max(0, Math.floor(Number(durationMinutes) * 60));
+     remainingSeconds = totalSeconds;
+     
+     if (!link) {
+       Swal.fire({ icon: 'error', title: 'Link Soal Kosong' });
+       return;
+     }
+
+     // Aktifkan Layar Penuh
+     enterFullScreen();
+
+     document.querySelector('.card-identitas').style.display = 'none';
+     document.getElementById('examArea').style.display = 'flex';
+     document.getElementById('soalIframe').src = link;
+
+     examStarted = true;
+     updateTimerDisplay();
+
+     if (examTimer) clearInterval(examTimer);
+     examTimer = setInterval(function () {
+       remainingSeconds--;
+       if (remainingSeconds <= 0) {
+         clearInterval(examTimer);
+         finishExam(false);
+       } else {
+         updateTimerDisplay();
+       }
+     }, 1000);
+   }
+
+   function updateTimerDisplay() {
+     const h = Math.floor(remainingSeconds / 3600);
+     const m = Math.floor((remainingSeconds % 3600) / 60);
+     const s = remainingSeconds % 60;
+     document.getElementById('timerDisplay').textContent = 
+       `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+     
+     const progress = (remainingSeconds / totalSeconds) * 100;
+     document.getElementById('timeProgress').style.width = `${progress}%`;
+   }
+
+   function finishExam(manual = true) {
+     const processFinish = () => {
+       examStarted = false;
+       if (examTimer) clearInterval(examTimer);
+       if (currentStudent) google.script.run.setStatusInactive(currentStudent.nisn);
+
+       Swal.fire({
+         icon: 'success',
+         title: 'Ujian Selesai',
+         text: 'Terima kasih telah mengikuti ujian.',
+         timer: 2000,
+         showConfirmButton: false
+       }).then(() => logoutToLogin());
+     };
+
+     if (manual) {
+       Swal.fire({
+         title: 'Akhiri Ujian?',
+         text: 'Apakah Anda yakin ingin menyelesaikan ujian?',
+         icon: 'question',
+         showCancelButton: true,
+         confirmButtonText: 'Ya, Selesai'
+       }).then((result) => {
+         if (result.isConfirmed) processFinish();
+       });
+     } else {
+       Swal.fire({ icon: 'warning', title: 'Waktu Habis', text: 'Ujian berakhir otomatis.' });
+       processFinish();
+     }
+   }
+
+   /* ---------- FUNCTION ADMIN & DATA TABLE (TETAP SAMA) ---------- */
+   function loadDashboardCounts(){
+     google.script.run.withSuccessHandler(function(c){
+       document.getElementById('countTotal').textContent = c.total || 0;
+       document.getElementById('countAktif').textContent = c.aktif || 0;
+       document.getElementById('countTidakAktif').textContent = c.tidakAktif || 0;
+     }).getAdminCounts();
+   }
+ </script>
+</body>
+</html>

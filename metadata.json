@@ -1,0 +1,6 @@
+{
+  "name": "CBT Ujian Online - Sistem Ujian Sekolah",
+  "description": "Aplikasi Computer Based Test (CBT) Ujian Online lengkap dengan panel Siswa, sistem anti-curang (tab lock & keyboard protection), timer otomatis, validasi token, dan panel Admin manajemen peserta serta bank soal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
