@@ -208,6 +208,7 @@ export const StudentPanel: React.FC<StudentPanelProps> = ({
               <li><strong>DILARANG</strong> berpindah tab browser, membuka aplikasi lain, atau meminimalkan layar.</li>
               <li>Sistem pengawas otomatis mendeteksi perpindahan layar dan akan <strong>MENGUNCI (Menonaktifkan)</strong> akun peserta jika terjadi pelanggaran.</li>
               <li>Tombol shortcut seperti <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">Alt+Tab</code>, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">Ctrl+C</code>, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">F12</code> dan klik kanan dinonaktifkan.</li>
+              <li><strong>Blokir Notifikasi & Bebas Gangguan:</strong> Sistem memblokir notifikasi masuk secara otomatis. Disarankan menyalakan mode <em>Jangan Ganggu / Focus Mode</em> di HP/Laptop Anda agar tidak ada pop-up pesan masuk yang mengalihkan layar.</li>
               <li>Pastikan koneksi internet stabil sebelum menekan tombol Mulai Ujian.</li>
             </ul>
           </div>

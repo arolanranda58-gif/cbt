@@ -12,10 +12,10 @@ import {
 import { StudentLogin } from './components/StudentLogin';
 import { AdminLogin } from './components/AdminLogin';
 import { StudentPanel } from './components/StudentPanel';
-import { ExamScreen } from './components/ExamScreen';
+import { ExamScreen, getGoogleFormViewScoreUrl, getSafeFormOpenUrl } from './components/ExamScreen';
 import { AdminShell } from './components/AdminShell';
 import { ViolationModal } from './components/ViolationModal';
-import { CheckCircle2, Loader2, Sparkles, LogOut, Check } from 'lucide-react';
+import { CheckCircle2, Loader2, Sparkles, LogOut, Check, Award, ExternalLink } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { initAuth, getAccessToken } from './services/firebaseAuth';
 import { logEventToSpreadsheet } from './services/googleSheetsService';
@@ -52,6 +52,7 @@ export default function App() {
   // Modals
   const [violationReason, setViolationReason] = useState<string | null>(null);
   const [showExamCompletedModal, setShowExamCompletedModal] = useState(false);
+  const [completedScoreUrl, setCompletedScoreUrl] = useState<string>('');
 
   // Web Audio tone generator for alerts
   const playAlertSound = (type: 'violation' | 'success') => {
@@ -187,8 +188,11 @@ export default function App() {
   };
 
   // Exam Finish Normal
-  const handleExamFinish = () => {
+  const handleExamFinish = (scoreUrl?: string) => {
     playAlertSound('success');
+    const finalScoreUrl =
+      scoreUrl || (currentSoal?.link ? getGoogleFormViewScoreUrl(currentSoal.link) : '');
+    setCompletedScoreUrl(finalScoreUrl);
     setShowExamCompletedModal(true);
 
     if (currentStudent && currentSoal && settings.googleSpreadsheetId) {
@@ -210,6 +214,7 @@ export default function App() {
 
   const handleFinishModalClose = () => {
     setShowExamCompletedModal(false);
+    setCompletedScoreUrl('');
     setCurrentStudent(null);
     setCurrentSoal(null);
     setActiveScreen('login');
@@ -416,6 +421,29 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            {completedScoreUrl ? (
+              <a
+                href={completedScoreUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 mb-3 cursor-pointer group"
+              >
+                <Award className="w-5 h-5 text-amber-300 group-hover:scale-110 transition-transform" />
+                <span>Buka Rincian Skor Google Form</span>
+                <ExternalLink className="w-4 h-4 opacity-80" />
+              </a>
+            ) : (
+              <div className="mb-4 text-left p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-950">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Sesi Pengerjaan Ujian Resmi Selesai</span>
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  Jawaban Anda telah tercatat resmi di sistem CBT dan database sekolah.
+                </p>
+              </div>
+            )}
 
             <button
               onClick={handleFinishModalClose}

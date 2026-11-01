@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: PengaturanApp = {
   blockShortcuts: true,
   blockRightClick: true,
   fullScreenEnforced: true,
+  blockNotifications: true,
 };
 
 export const DEFAULT_PESERTA: Peserta[] = [

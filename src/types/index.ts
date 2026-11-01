@@ -35,6 +35,7 @@ export interface PengaturanApp {
   blockShortcuts: boolean;
   blockRightClick: boolean;
   fullScreenEnforced: boolean;
+  blockNotifications?: boolean;
   // Google Spreadsheet as Database
   googleSpreadsheetId?: string;
   googleSpreadsheetUrl?: string;

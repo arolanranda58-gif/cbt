@@ -9,7 +9,8 @@ import {
   School,
   Image as ImageIcon,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  BellOff
 } from 'lucide-react';
 
 interface AdminPengaturanProps {
@@ -173,11 +174,10 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
               />
               <div>
                 <div className="text-sm font-semibold text-slate-900">
-                  Aktifkan Deteksi Pindah Tab & Blur Layar
+                  Aktifkan Deteksi Window Blur & Pindah Tab Layar
                 </div>
                 <div className="text-xs text-slate-500">
-                  Jika siswa berpindah ke tab lain atau membuka aplikasi lain, status ujian akan
-                  seketika terkunci (Tidak Aktif) dan siswa dikeluarkan dari ujian.
+                  Secara aktif memicu pelanggaran saat event window.blur terdeteksi (siswa mengklik aplikasi lain, membuka jendela lain, taskbar, monitor eksternal, atau berpindah tab).
                 </div>
               </div>
             </label>
@@ -235,6 +235,26 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
                 </div>
                 <div className="text-xs text-slate-500">
                   Mencegah menu klik kanan untuk inspect element atau copy gambar/teks soal.
+                </div>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 cursor-pointer hover:bg-emerald-100/50 transition">
+              <input
+                type="checkbox"
+                checked={formData.blockNotifications ?? true}
+                onChange={(e) =>
+                  setFormData({ ...formData, blockNotifications: e.target.checked })
+                }
+                className="mt-1 w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+              />
+              <div>
+                <div className="text-sm font-semibold text-emerald-950 flex items-center gap-1.5">
+                  <BellOff className="w-3.5 h-3.5 text-emerald-600" />
+                  Blokir Semua Notifikasi Masuk (Mode Jangan Ganggu / DND)
+                </div>
+                <div className="text-xs text-emerald-800/80">
+                  Secara proaktif memblokir web notifications, web push alert browser, dan mengaktifkan perisai bebas gangguan selama siswa mengerjakan soal.
                 </div>
               </div>
             </label>
