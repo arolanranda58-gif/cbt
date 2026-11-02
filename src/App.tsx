@@ -187,9 +187,57 @@ export default function App() {
     setLoginRole('siswa');
   };
 
+  // Set student status to 'Tidak Aktif' when finishing exam
+  const handleStudentDeactivate = (studentId: string) => {
+    setPesertaList((prev) =>
+      prev.map((p) => {
+        if (p.id === studentId || (currentStudent && p.nisn === currentStudent.nisn)) {
+          return {
+            ...p,
+            status: 'Tidak Aktif',
+          };
+        }
+        return p;
+      })
+    );
+
+    setCurrentStudent((prev) => (prev ? { ...prev, status: 'Tidak Aktif' } : null));
+
+    if (settings.googleSpreadsheetId && currentStudent) {
+      getAccessToken()
+        .then((token) => {
+          if (token && settings.googleSpreadsheetId && currentStudent) {
+            logEventToSpreadsheet(token, settings.googleSpreadsheetId, {
+              nisn: currentStudent.nisn,
+              nama: currentStudent.nama,
+              mataPelajaran: currentSoal?.mataPelajaran || '-',
+              status: 'Selesai (Tidak Aktif)',
+              keterangan: 'Siswa menyelesaikan ujian - status otomatis menjadi Tidak Aktif',
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
   // Exam Finish Normal
   const handleExamFinish = (scoreUrl?: string) => {
     playAlertSound('success');
+    if (currentStudent) {
+      setPesertaList((prev) =>
+        prev.map((p) => {
+          if (p.id === currentStudent.id || p.nisn === currentStudent.nisn) {
+            return {
+              ...p,
+              status: 'Tidak Aktif',
+            };
+          }
+          return p;
+        })
+      );
+      setCurrentStudent((prev) => (prev ? { ...prev, status: 'Tidak Aktif' } : null));
+    }
+
     const finalScoreUrl =
       scoreUrl || (currentSoal?.link ? getGoogleFormViewScoreUrl(currentSoal.link) : '');
     setCompletedScoreUrl(finalScoreUrl);
@@ -203,8 +251,8 @@ export default function App() {
               nisn: currentStudent.nisn,
               nama: currentStudent.nama,
               mataPelajaran: currentSoal.mataPelajaran,
-              status: 'Selesai',
-              keterangan: 'Pengerjaan ujian selesai tepat waktu dan tersimpan',
+              status: 'Selesai (Tidak Aktif)',
+              keterangan: 'Pengerjaan ujian selesai tepat waktu - status otomatis Tidak Aktif',
             });
           }
         })
@@ -352,6 +400,7 @@ export default function App() {
           soal={currentSoal}
           settings={settings}
           onFinishExam={handleExamFinish}
+          onStudentDeactivate={handleStudentDeactivate}
           onViolation={handleExamViolation}
         />
       )}

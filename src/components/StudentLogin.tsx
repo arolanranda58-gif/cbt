@@ -116,7 +116,7 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
 
     if (student.status === 'Tidak Aktif') {
       setErrorMsg(
-        'Akun peserta berstatus TIDAK AKTIF / TERKUNCI (kemungkinan akibat pelanggaran ujian). Silakan hubungi Proktor atau Pengawas Ruangan untuk membuka kunci.'
+        'Akun peserta berstatus TIDAK AKTIF (ujian telah diselesaikan atau akun dikunci). Silakan hubungi Proktor atau Pengawas Ruangan jika membutuhkan reset ujian.'
       );
       return;
     }

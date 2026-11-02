@@ -73,6 +73,7 @@ interface ExamScreenProps {
   soal: SoalUjian;
   settings: PengaturanApp;
   onFinishExam: (scoreUrl?: string) => void;
+  onStudentDeactivate?: (studentId: string) => void;
   onViolation: (reason: string) => void;
 }
 
@@ -81,6 +82,7 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
   soal,
   settings,
   onFinishExam,
+  onStudentDeactivate,
   onViolation,
 }) => {
   const totalSeconds = Math.max(60, soal.waktuMenit * 60);
@@ -413,6 +415,11 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
     setShowConfirmFinish(false);
     setShowScoreModal(false);
 
+    // Otomatis ubah status siswa menjadi 'Tidak Aktif' saat ujian diselesaikan
+    if (onStudentDeactivate) {
+      onStudentDeactivate(student.id);
+    }
+
     try {
       confetti({
         particleCount: 120,
@@ -464,27 +471,11 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
           <span className="hidden md:inline-block text-xs bg-slate-700 text-slate-300 px-2.5 py-0.5 rounded-full border border-slate-600">
             {student.nama} ({student.kelas})
           </span>
-          {isExamCompleted ? (
+          {isExamCompleted && (
             <div className="flex items-center gap-1.5 text-xs text-emerald-300 bg-emerald-900/80 px-2.5 py-0.5 rounded-full border border-emerald-600/50 font-bold">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Sesi Ujian Selesai (Bebas Pelanggaran)</span>
+              <span>Sesi Ujian Selesai</span>
             </div>
-          ) : (
-            <>
-              <div className="hidden lg:flex items-center gap-1 text-xs text-emerald-400 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/40">
-                <Shield className="w-3.5 h-3.5" />
-                <span>Anti-Cheat & Window Blur Aktif</span>
-              </div>
-              {(settings.blockNotifications ?? true) && (
-                <div
-                  className="hidden xl:flex items-center gap-1 text-xs text-amber-300 bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-800/40"
-                  title="Perisai Bebas Gangguan: Semua notifikasi browser dan web push diblokir selama ujian berlangsung"
-                >
-                  <BellOff className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Notifikasi Diblokir</span>
-                </div>
-              )}
-            </>
           )}
         </div>
 
@@ -531,28 +522,6 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                 className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition"
               >
                 {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
-
-              {/* Button Izinkan Buka Skor Google Form */}
-              <button
-                type="button"
-                onClick={() => {
-                  isScoreViewAllowedRef.current = true;
-                  setIsScoreViewAllowed(true);
-                  setShowScoreModal(true);
-                }}
-                title="Panduan dan akses melihat nilai Google Form tanpa terdeteksi pelanggaran"
-                className={`py-1.5 px-3 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
-                  isScoreViewAllowed
-                    ? 'bg-emerald-600 text-white shadow-xs ring-1 ring-emerald-400'
-                    : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60'
-                }`}
-              >
-                <Award className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">
-                  {isScoreViewAllowed ? 'Izin Skor Aktif' : 'Panduan Skor'}
-                </span>
-                <span className="sm:hidden">Skor</span>
               </button>
 
               {/* Selesai Ujian Button */}
@@ -640,61 +609,32 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
 
             {/* Top helper banner for embedded link (when still working) */}
             {!isExamCompleted && (
-              <>
-                <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 truncate">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="truncate">
-                      Lembar Soal: <strong className="font-mono text-blue-700">{soal.link}</strong>
-                    </span>
-                    {(settings.blockNotifications ?? true) && (
-                      <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-medium shrink-0">
-                        <BellOff className="w-3 h-3 text-amber-600" />
-                        Notifikasi Masuk Diblokir
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIframeKey((k) => k + 1)}
-                      title="Muat ulang lembar soal jika terjadi kendala jaringan"
-                      className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-semibold flex items-center gap-1 transition text-[11px] cursor-pointer"
-                    >
-                      <RotateCcw className="w-3 h-3 text-slate-500" />
-                      <span>Muat Ulang Form</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('simulator')}
-                      className="text-blue-600 hover:text-blue-800 font-semibold underline shrink-0 ml-1 cursor-pointer"
-                    >
-                      Gunakan Lembar Interaktif jika form tidak tampil
-                    </button>
-                  </div>
+              <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 truncate">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="truncate">
+                    Lembar Soal: <strong className="font-mono text-blue-700">{soal.link}</strong>
+                  </span>
                 </div>
-
-                {/* Score Helper Instruction Strip */}
-                <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-1.5 text-[11px] sm:text-xs text-emerald-900 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    <span>
-                      <strong>Petunjuk Skor:</strong> Nilai Google Form akan otomatis muncul setelah Anda mengklik tombol <strong>'Kirim' (Submit)</strong> di formulir. Setelah terkirim, klik tombol resmi <strong>'Lihat skor'</strong> pada formulir (Aman & Bebas Pelanggaran).
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      isScoreViewAllowedRef.current = true;
-                      setIsScoreViewAllowed(true);
-                      setShowScoreModal(true);
-                    }}
-                    className="shrink-0 text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                    onClick={() => setIframeKey((k) => k + 1)}
+                    title="Muat ulang lembar soal jika terjadi kendala jaringan"
+                    className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-semibold flex items-center gap-1 transition text-[11px] cursor-pointer"
                   >
-                    Lihat Panduan
+                    <RotateCcw className="w-3 h-3 text-slate-500" />
+                    <span>Muat Ulang Form</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('simulator')}
+                    className="text-blue-600 hover:text-blue-800 font-semibold underline shrink-0 ml-1 cursor-pointer"
+                  >
+                    Gunakan Lembar Interaktif jika form tidak tampil
                   </button>
                 </div>
-              </>
+              </div>
             )}
 
             {/* Iframe Container with active interaction and score-view detection */}
@@ -944,24 +884,24 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
           <div className="bg-white text-slate-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
             <div className="p-6 text-center">
               <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Award className="w-8 h-8 text-amber-600" />
+                <Flag className="w-8 h-8 text-amber-600" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Selesaikan Ujian & Buka Skor?</h3>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Konfirmasi Selesai Ujian</h3>
               <p className="text-sm text-slate-600 mb-4 leading-relaxed">
                 Apakah Anda yakin ingin menyelesaikan ujian <strong>{soal.mataPelajaran}</strong>?
-                Waktu pengerjaan akan dihentikan dan sistem akan menampilkan lembar formulir untuk melihat skor Anda.
+                Waktu pengerjaan akan dihentikan dan status peserta Anda otomatis diubah menjadi <strong>Tidak Aktif</strong>.
               </p>
 
               <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 text-left mb-6 space-y-2 border border-slate-200">
                 <div>• Nama Siswa: <strong>{student.nama}</strong> ({student.kelas})</div>
                 <div>• Sisa Waktu: <strong>{formatTime(remainingSeconds)}</strong></div>
-                <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 space-y-1">
-                  <div className="font-bold flex items-center gap-1 text-emerald-950">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Akses Skor Langsung di Formulir:</span>
+                <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-200 text-blue-900 space-y-1">
+                  <div className="font-bold flex items-center gap-1 text-blue-950">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Petunjuk Akhir:</span>
                   </div>
                   <div>
-                    Setelah mengklik tombol di bawah, sistem langsung mempertahankan lembar Google Form Anda agar Anda dapat mengklik tombol <strong>'Lihat skor'</strong> (Aman tanpa peringatan pelanggaran).
+                    Pastikan Anda telah menekan tombol <strong>'Kirim'</strong> pada Google Form sebelum menyelesaikan sesi ini.
                   </div>
                 </div>
               </div>
@@ -979,8 +919,8 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                   onClick={handleFinishConfirmed}
                   className="flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Award className="w-4 h-4 text-amber-300" />
-                  <span>Ya, Selesai & Buka Skor</span>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Ya, Selesai Ujian</span>
                 </button>
               </div>
             </div>
@@ -1028,8 +968,8 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                   }}
                   className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Award className="w-4 h-4 text-amber-300" />
-                  <span>Selesaikan Ujian & Buka Skor Sekarang</span>
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Selesaikan Ujian Sekarang</span>
                 </button>
 
                 <div className="flex gap-2">
