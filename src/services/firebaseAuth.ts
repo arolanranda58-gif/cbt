@@ -49,14 +49,26 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Gagal mendapatkan access token Google dari Firebase Auth');
+      throw new Error('Gagal mendapatkan token akses Google dari Firebase Auth.');
     }
 
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Google Sign-in error:', error);
-    throw error;
+    let message = error.message || 'Gagal masuk dengan akun Google.';
+    if (error.code === 'auth/popup-blocked') {
+      message = 'Jendela popup Google Sign-In diblokir oleh browser. Harap izinkan popup di peramban Anda untuk melanjutkan.';
+    } else if (error.code === 'auth/popup-closed-by-user') {
+      message = 'Jendela login Google ditutup sebelum otentikasi selesai.';
+    } else if (error.code === 'auth/unauthorized-domain') {
+      message = 'Domain preview ini belum diotorisasi di Firebase Authentication. Anda dapat langsung menghubungkan Google Spreadsheet menggunakan Opsi 2 (masukkan tautan Google Spreadsheet yang dibagikan).';
+    } else if (error.code === 'auth/network-request-failed') {
+      message = 'Koneksi jaringan terputus saat menghubungi server otentikasi Google.';
+    }
+    const err = new Error(message);
+    (err as any).code = error.code;
+    throw err;
   } finally {
     isSigningIn = false;
   }
