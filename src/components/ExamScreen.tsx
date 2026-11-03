@@ -19,7 +19,8 @@ import {
   Award,
   CheckCircle2,
   BellOff,
-  LogOut
+  LogOut,
+  Lock
 } from 'lucide-react';
 
 /**
@@ -91,8 +92,11 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
   const [showConfirmFinish, setShowConfirmFinish] = useState(false);
   const [isScoreViewAllowed, setIsScoreViewAllowed] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showSubmittedLockOverlay, setShowSubmittedLockOverlay] = useState(false);
+  const [showBlockedScoreModal, setShowBlockedScoreModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'iframe' | 'simulator'>('iframe');
   const [isExamCompleted, setIsExamCompleted] = useState(false);
+  const [iframeLoadCount, setIframeLoadCount] = useState(0);
   
   // Interactive CBT simulator state (for built-in questions)
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
@@ -114,6 +118,7 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
   }, [answers]);
 
   const isExamActiveRef = useRef(true);
+  const isExamCompletedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const isMouseOverIframeRef = useRef(false);
   const showConfirmFinishRef = useRef(false);
@@ -124,6 +129,25 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
   useEffect(() => {
     showConfirmFinishRef.current = showConfirmFinish;
   }, [showConfirmFinish]);
+
+  useEffect(() => {
+    isExamCompletedRef.current = isExamCompleted;
+  }, [isExamCompleted]);
+
+  // Handler saat iframe Google Form memuat halaman baru
+  const handleIframeLoad = () => {
+    setIframeLoadCount((prev) => {
+      const nextCount = prev + 1;
+      // Load 1 = Tampilan awal formulir saat siswa mulai menjawab
+      // Load >= 2 = Terjadi saat siswa menekan tombol 'Kirim' dan Google Form mengarahkan ke formResponse
+      // Pada saat inilah Google Form menampilkan tombol 'Lihat skor'
+      if (nextCount >= 2 && !isExamCompletedRef.current) {
+        // Tampilkan overlay pelindung agar tombol Lihat Skor tidak bisa diklik sebelum menekan Selesai Ujian
+        setShowSubmittedLockOverlay(true);
+      }
+      return nextCount;
+    });
+  };
 
   // Format Google Form URL to include embedded=true for optimal iframe presentation
   const formattedEmbedUrl = React.useMemo(() => {
@@ -305,49 +329,46 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
         clearTimeout(blurTimeoutRef.current);
       }
 
-      // Gunakan jeda singkat (120ms) untuk memastikan fokus kursor
+      // Gunakan jeda singkat (150ms) untuk memastikan fokus kursor
       blurTimeoutRef.current = setTimeout(() => {
         if (!isExamActiveRef.current) return;
         if (showConfirmFinishRef.current || isScoreViewAllowedRef.current) return;
 
-        // Cek apakah aksi dipicu oleh klik pada Google Form baru-baru ini
-        // (misalnya saat siswa mengklik tombol "Lihat skor / View score" di akhir Google Form)
-        const isRecentIframeClick = Date.now() - lastIframeClickTimeRef.current < 5000;
-        if (isRecentIframeClick && (isMouseOverIframeRef.current || document.hidden)) {
-          // Tombol Lihat Skor pada Google Form membuka tab/popup baru:
-          // Izinkan dan jangan anggap pelanggaran!
-          isScoreViewAllowedRef.current = true;
-          setIsScoreViewAllowed(true);
-          setShowScoreModal(true);
+        // PENTING: Sebelum siswa mengklik tombol 'Selesai Ujian' (isExamCompleted masih false),
+        // siswa TIDAK DIIZINKAN membuka tombol Lihat Skor pada Google Form!
+        if (!isExamCompletedRef.current) {
+          // Jika tab tersembunyi / berpindah layar karena siswa mencoba membuka tab skor baru sebelum Selesai Ujian:
+          if (document.hidden) {
+            setShowBlockedScoreModal(true);
+            handleTriggerViolation('Pelanggaran: Dilarang membuka halaman skor atau meninggalkan jendela sebelum menekan tombol Selesai Ujian!');
+            return;
+          }
+
+          // Cek apakah fokus kursor berpindah ke dalam Google Form (elemen iframe) untuk menjawab soal
+          const activeEl = document.activeElement;
+          const isInteractingWithGoogleForm =
+            activeEl === iframeRef.current ||
+            activeEl?.tagName === 'IFRAME' ||
+            (isMouseOverIframeRef.current && !document.hidden);
+
+          if (isInteractingWithGoogleForm) {
+            // Siswa sedang mengklik atau menjawab di dalam lembar soal Google Form
+            return;
+          }
+
+          // Periksa apakah jendela browser masih atau sudah kembali memiliki fokus
+          if (typeof document.hasFocus === 'function' && document.hasFocus()) {
+            return;
+          }
+
+          // Jendela browser kehilangan fokus
+          handleTriggerViolation('Pelanggaran: Jendela ujian kehilangan fokus (Window Blur terdeteksi)!');
           return;
         }
 
-        // 1. Jika tab tersembunyi / diminimalkan
-        if (document.hidden) {
-          handleTriggerViolation('Pelanggaran: Anda meninggalkan jendela ujian (Window Blur / Pindah Tab)!');
-          return;
-        }
-
-        // 2. Periksa apakah fokus berpindah ke dalam Google Form (elemen iframe)
-        const activeEl = document.activeElement;
-        const isInteractingWithGoogleForm =
-          activeEl === iframeRef.current ||
-          activeEl?.tagName === 'IFRAME' ||
-          (isMouseOverIframeRef.current && !document.hidden);
-
-        if (isInteractingWithGoogleForm) {
-          // Siswa sedang mengklik atau menjawab di dalam lembar soal Google Form
-          return;
-        }
-
-        // 2b. Periksa apakah jendela browser masih atau sudah kembali memiliki fokus
-        // (misal notifikasi sistem/OS melintas sesaat tanpa siswa berpindah jendela)
-        if (typeof document.hasFocus === 'function' && document.hasFocus()) {
-          return;
-        }
-
-        // 3. Jendela browser kehilangan fokus (mengklik aplikasi lain, taskbar, layar monitor kedua, dsb)
-        handleTriggerViolation('Pelanggaran: Jendela ujian kehilangan fokus (Window Blur terdeteksi)!');
+        // Jika ujian sudah diselesaikan secara resmi (isExamCompleted == true):
+        isScoreViewAllowedRef.current = true;
+        setIsScoreViewAllowed(true);
       }, 150);
     };
 
@@ -357,16 +378,16 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
       if (isScoreViewAllowedRef.current || showConfirmFinishRef.current) return;
 
       if (document.hidden) {
-        // Cek apakah tab baru terbuka karena klik tombol di dalam Google Form (Lihat skor / View score)
-        const isRecentIframeClick = Date.now() - lastIframeClickTimeRef.current < 5000;
-        if (isRecentIframeClick || isScoreViewAllowedRef.current) {
-          isScoreViewAllowedRef.current = true;
-          setIsScoreViewAllowed(true);
-          setShowScoreModal(true);
+        if (!isExamCompletedRef.current) {
+          // Siswa mencoba berpindah tab atau membuka Lihat Skor sebelum menekan Selesai Ujian
+          setShowBlockedScoreModal(true);
+          handleTriggerViolation('Pelanggaran: Dilarang membuka halaman skor atau berpindah tab sebelum menekan tombol Selesai Ujian!');
           return;
         }
 
-        handleTriggerViolation('Pelanggaran: Anda berpindah tab / membuka layar lain saat ujian!');
+        // Sudah menyelesaikan ujian secara resmi: izinkan melihat skor
+        isScoreViewAllowedRef.current = true;
+        setIsScoreViewAllowed(true);
       }
     };
 
@@ -410,10 +431,13 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
   const handleFinishConfirmed = () => {
     isScoreViewAllowedRef.current = true;
     isExamActiveRef.current = false;
+    isExamCompletedRef.current = true;
     setIsScoreViewAllowed(true);
     setIsExamCompleted(true);
     setShowConfirmFinish(false);
     setShowScoreModal(false);
+    setShowSubmittedLockOverlay(false);
+    setShowBlockedScoreModal(false);
 
     // Otomatis ubah status siswa menjadi 'Tidak Aktif' saat ujian diselesaikan
     if (onStudentDeactivate) {
@@ -609,19 +633,29 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
 
             {/* Top helper banner for embedded link (when still working) */}
             {!isExamCompleted && (
-              <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 truncate">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="truncate">
-                    Lembar Soal: <strong className="font-mono text-blue-700">{soal.link}</strong>
-                  </span>
+              <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="truncate">
+                      Lembar Soal: <strong className="font-mono text-blue-700">{soal.link}</strong>
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] font-semibold">
+                    <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Tombol 'Lihat Skor' Google Form terkunci sampai Anda menekan 'Selesai Ujian'</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIframeKey((k) => k + 1)}
+                    onClick={() => {
+                      setIframeLoadCount(0);
+                      setShowSubmittedLockOverlay(false);
+                      setIframeKey((k) => k + 1);
+                    }}
                     title="Muat ulang lembar soal jika terjadi kendala jaringan"
-                    className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-semibold flex items-center gap-1 transition text-[11px] cursor-pointer"
+                    className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-semibold flex items-center gap-1 transition text-[11px] cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3 text-slate-500" />
                     <span>Muat Ulang Form</span>
@@ -664,10 +698,62 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                 key={iframeKey}
                 id="soalIframe"
                 src={formattedEmbedUrl}
+                onLoad={handleIframeLoad}
                 title="Soal Ujian Online"
                 className="w-full h-full border-0 absolute inset-0 bg-white"
                 allow="camera; microphone; fullscreen; clipboard-read; clipboard-write; autoplay"
               />
+
+              {/* OVERLAY KUNCI LIHAT SKOR: Mencegah siswa mengklik tombol 'Lihat skor' sebelum menekan 'Selesai Ujian' */}
+              {showSubmittedLockOverlay && !isExamCompleted && (
+                <div className="absolute inset-0 z-30 bg-slate-900/85 backdrop-blur-xs flex flex-col items-center justify-center p-4 sm:p-6 text-center animate-in fade-in zoom-in-95 duration-200">
+                  <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 text-slate-800">
+                    <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                      <Lock className="w-8 h-8 text-amber-600" />
+                    </div>
+
+                    <div className="inline-block px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
+                      Akses Skor Terkunci
+                    </div>
+
+                    <h3 className="text-xl font-black text-slate-900 mb-2">
+                      Jawaban Google Form Telah Terkirim
+                    </h3>
+
+                    <p className="text-xs sm:text-sm text-slate-600 mb-5 leading-relaxed">
+                      Tombol <strong>'Lihat skor'</strong> pada Google Form terkunci sementara. Anda <strong>wajib menekan tombol 'Selesai Ujian'</strong> pada lembar ujian terlebih dahulu untuk menyelesaikan sesi ujian secara resmi sebelum dapat melihat skor.
+                    </p>
+
+                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-left text-slate-600 mb-5 space-y-1.5">
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Status Peserta:</span>
+                      </div>
+                      <div>• Peserta: <strong>{student.nama}</strong> ({student.kelas})</div>
+                      <div>• Status Anda otomatis diubah menjadi <strong>Tidak Aktif</strong> saat ujian diselesaikan.</div>
+                    </div>
+
+                    <div className="flex flex-col gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmFinish(true)}
+                        className="w-full py-3.5 px-6 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold rounded-xl text-sm shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Flag className="w-4 h-4 fill-current" />
+                        <span>Selesaikan Ujian & Buka Akses Skor</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowSubmittedLockOverlay(false)}
+                        className="w-full py-2 px-3 text-slate-500 hover:text-slate-700 text-xs font-semibold transition cursor-pointer"
+                      >
+                        Belum Mengirim Jawaban? Kembali ke Formulir
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ) : isExamCompleted ? (
@@ -901,7 +987,7 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                     <span>Petunjuk Akhir:</span>
                   </div>
                   <div>
-                    Pastikan Anda telah menekan tombol <strong>'Kirim'</strong> pada Google Form sebelum menyelesaikan sesi ini.
+                    Pastikan Anda telah menekan tombol <strong>'Kirim'</strong> pada Google Form sebelum menyelesaikan sesi ini. Setelah konfirmasi, tombol <strong>Lihat Skor</strong> akan dibuka.
                   </div>
                 </div>
               </div>
@@ -921,6 +1007,57 @@ export const ExamScreen: React.FC<ExamScreenProps> = ({
                 >
                   <CheckCircle className="w-4 h-4" />
                   <span>Ya, Selesai Ujian</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PERINGATAN SKOR TERKUNCI */}
+      {showBlockedScoreModal && !isExamCompleted && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white text-slate-900 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-rose-200 animate-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <Lock className="w-8 h-8 text-rose-600" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">
+                Akses Lihat Skor Terkunci!
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed">
+                Anda belum mengklik tombol <strong>'Selesai Ujian'</strong> pada lembar ujian. Sesuai tata tertib, Anda dilarang membuka atau melihat skor Google Form sebelum menyelesaikan ujian secara resmi.
+              </p>
+
+              <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 text-left mb-5 space-y-1.5">
+                <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Petunjuk Penyelesaian:</span>
+                </div>
+                <div>1. Pastikan Anda telah menekan tombol <strong>'Kirim'</strong> pada Google Form.</div>
+                <div>2. Klik tombol <strong>'Selesaikan Ujian Sekarang'</strong> di bawah ini.</div>
+                <div>3. Status peserta otomatis diubah menjadi <strong>Tidak Aktif</strong> dan tombol skor akan dibuka.</div>
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBlockedScoreModal(false);
+                    setShowConfirmFinish(true);
+                  }}
+                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Flag className="w-4 h-4 fill-current" />
+                  <span>Selesaikan Ujian Sekarang & Buka Skor</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBlockedScoreModal(false)}
+                  className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Kembali ke Lembar Soal
                 </button>
               </div>
             </div>
