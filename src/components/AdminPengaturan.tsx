@@ -297,6 +297,13 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
               />
             </div>
           </div>
+
+          <p className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-100 flex items-center gap-1.5">
+            <span className="font-semibold text-emerald-700">Tips Spreadsheet:</span>
+            <span>
+              Anda juga dapat mengganti username dan password ini secara langsung di Google Spreadsheet pada lembar <strong>Pengaturan</strong> (baris <code>adminUsername</code> dan <code>adminPassword</code>).
+            </span>
+          </p>
         </div>
 
         {/* Action Buttons */}

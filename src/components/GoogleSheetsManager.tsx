@@ -31,6 +31,9 @@ import {
   ChevronDown,
   ChevronUp,
   FileCheck2,
+  Copy,
+  Check,
+  Loader2,
 } from 'lucide-react';
 
 interface GoogleSheetsManagerProps {
@@ -54,9 +57,11 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
 }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatusText, setProcessingStatusText] = useState('Memproses...');
   const [inputUrl, setInputUrl] = useState('');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [showFormatGuide, setShowFormatGuide] = useState(false);
+  const [hasCopiedFormat, setHasCopiedFormat] = useState(false);
 
   // Confirmation Modals State (Required for destructive/overwriting operations per guidelines)
   const [confirmModal, setConfirmModal] = useState<{
@@ -112,30 +117,87 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
   };
 
   // Trigger Confirmation Dialogs
-  const requestCreateNew = () => {
-    if (!currentUser) {
-      setFeedback({
-        type: 'info',
-        message: 'Silakan klik "Sign in with Google" terlebih dahulu untuk membuat spreadsheet langsung di Google Drive Anda.',
-      });
-      return;
+  // If not authenticated or token expired, automatically prompt Google Sign-In first so the button ALWAYS works!
+  const requestCreateNew = async () => {
+    setFeedback(null);
+    let token = await getAccessToken();
+
+    if (!currentUser || !token) {
+      setIsProcessing(true);
+      setProcessingStatusText('Menghubungkan akun Google...');
+      try {
+        setFeedback({
+          type: 'info',
+          message: 'Membuka jendela otentikasi Google untuk izin membuat database di Google Drive Anda...',
+        });
+        const res = await googleSignIn();
+        if (res) {
+          onUserChanged(res.user);
+          onUpdateSettings({
+            ...settings,
+            googleAccountEmail: res.user.email || undefined,
+          });
+          token = res.accessToken;
+        } else {
+          setIsProcessing(false);
+          return;
+        }
+      } catch (err: any) {
+        setIsProcessing(false);
+        setFeedback({
+          type: 'error',
+          message: err.message || 'Gagal masuk dengan akun Google. Periksa izin popup peramban Anda atau gunakan opsi buka sheets.new.',
+        });
+        return;
+      } finally {
+        setIsProcessing(false);
+      }
     }
+
     setConfirmModal({
       isOpen: true,
       title: 'Buat Database Google Spreadsheet Baru?',
-      description: `Sistem akan membuat file spreadsheet baru berjudul "Database CBT Ujian Online - ${settings.schoolName || 'Sekolah'}" di Google Drive Anda lengkap dengan 4 lembar kerja (Data Peserta: ${pesertaList.length} siswa, Data Soal: ${soalList.length} mapel, Pengaturan, dan Log Pelanggaran).`,
+      description: `Sistem akan membuat file spreadsheet baru berjudul "Database CBT Ujian Online - ${settings.schoolName || 'Sekolah'}" di Google Drive Anda (${currentUser?.email || 'Akun Google'}) lengkap dengan 4 lembar kerja (Data Peserta: ${pesertaList.length} siswa, Data Soal: ${soalList.length} mapel, Pengaturan, dan Log Pelanggaran).`,
       actionType: 'create',
     });
   };
 
-  const requestSyncToSheet = () => {
-    if (!currentUser) {
-      setFeedback({
-        type: 'error',
-        message: 'Untuk menyimpan/mengirim perubahan ke Google Spreadsheet, silakan masuk dengan Google terlebih dahulu.',
-      });
-      return;
+  const requestSyncToSheet = async () => {
+    setFeedback(null);
+    let token = await getAccessToken();
+
+    if (!currentUser || !token) {
+      setIsProcessing(true);
+      setProcessingStatusText('Menghubungkan akun Google...');
+      try {
+        setFeedback({
+          type: 'info',
+          message: 'Membuka otentikasi Google untuk izin menyimpan data ke Google Spreadsheet...',
+        });
+        const res = await googleSignIn();
+        if (res) {
+          onUserChanged(res.user);
+          onUpdateSettings({
+            ...settings,
+            googleAccountEmail: res.user.email || undefined,
+          });
+          token = res.accessToken;
+        } else {
+          setIsProcessing(false);
+          return;
+        }
+      } catch (err: any) {
+        setIsProcessing(false);
+        setFeedback({
+          type: 'error',
+          message: err.message || 'Gagal masuk dengan Google untuk menyimpan data.',
+        });
+        return;
+      } finally {
+        setIsProcessing(false);
+      }
     }
+
     setConfirmModal({
       isOpen: true,
       title: 'Sinkronkan / Timpa Data ke Google Spreadsheet?',
@@ -162,20 +224,64 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
     });
   };
 
+  // Copy column format template to clipboard
+  const handleCopyFormatTemplate = () => {
+    const templateText = `--- FORMAT LEMBAR 1: Data Peserta ---
+Nomor\tNISN\tNama Peserta\tTingkat\tRuangan/Kelas\tStatus\tCatatan Pelanggaran
+1\t2024001\tAhmad Fadli Pratama\t10\tRuang 01\tAktif\t
+2\t2024002\tBudi Santoso\t10\tRuang 01\tAktif\t
+
+--- FORMAT LEMBAR 2: Data Soal ---
+Nomor\tTingkat\tMata Pelajaran\tLink Soal\tToken\tWaktu (Menit)
+1\t10\tMatematika Wajib\thttps://docs.google.com/forms/d/e/.../viewform\tMTK2025\t60
+2\t10\tBahasa Indonesia\thttps://docs.google.com/forms/d/e/.../viewform\tBIN2025\t60
+
+--- FORMAT LEMBAR 3: Pengaturan ---
+Kunci Pengaturan\tNilai
+adminUsername\tadmin
+adminPassword\tadmin123
+title\tCBT Ujian Online
+schoolName\t${settings.schoolName || 'Sekolah'}
+enableAntiCheat\ttrue
+
+--- FORMAT LEMBAR 4: Log Ujian & Pelanggaran ---
+Waktu (Timestamp)\tNISN\tNama Peserta\tMata Pelajaran\tAktivitas / Status\tKeterangan`;
+
+    navigator.clipboard.writeText(templateText).then(() => {
+      setHasCopiedFormat(true);
+      setTimeout(() => setHasCopiedFormat(false), 3000);
+    });
+  };
+
   // Execute Confirmed Operation
   const handleExecuteConfirmedAction = async () => {
     const action = confirmModal.actionType;
     setConfirmModal((prev) => ({ ...prev, isOpen: false }));
     setIsProcessing(true);
+    setProcessingStatusText(
+      action === 'create'
+        ? 'Membuat spreadsheet di Google Drive...'
+        : action === 'sync_to_sheet'
+        ? 'Menyimpan data ke spreadsheet...'
+        : action === 'pull_from_sheet'
+        ? 'Mengambil data spreadsheet...'
+        : 'Memproses...'
+    );
     setFeedback(null);
 
     try {
-      const token = await getAccessToken();
+      let token = await getAccessToken();
 
       if (action === 'create') {
         if (!token) {
-          throw new Error('Sesi Google belum aktif. Silakan klik "Sign in with Google" terlebih dahulu.');
+          const res = await googleSignIn();
+          if (!res?.accessToken) {
+            throw new Error('Sesi Google belum aktif. Silakan masuk dengan Google.');
+          }
+          token = res.accessToken;
+          onUserChanged(res.user);
         }
+
         const meta = await createSpreadsheetDatabase(
           token,
           settings.schoolName,
@@ -199,7 +305,12 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
           throw new Error('Belum ada spreadsheet yang terhubung.');
         }
         if (!token) {
-          throw new Error('Silakan klik "Sign in with Google" untuk memberikan izin menyimpan ke spreadsheet.');
+          const res = await googleSignIn();
+          if (!res?.accessToken) {
+            throw new Error('Silakan masuk dengan Google untuk memberikan izin menyimpan ke spreadsheet.');
+          }
+          token = res.accessToken;
+          onUserChanged(res.user);
         }
         await syncAllDataToSpreadsheet(
           token,
@@ -254,6 +365,7 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
       });
     } finally {
       setIsProcessing(false);
+      setProcessingStatusText('Memproses...');
     }
   };
 
@@ -267,6 +379,7 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
     }
 
     setIsProcessing(true);
+    setProcessingStatusText('Menghubungkan ke spreadsheet...');
     setFeedback(null);
     try {
       const token = await getAccessToken();
@@ -300,6 +413,7 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
       });
     } finally {
       setIsProcessing(false);
+      setProcessingStatusText('Memproses...');
     }
   };
 
@@ -409,27 +523,31 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
           <div className="space-y-3">
             <button
               onClick={handleSignIn}
-              disabled={isSigningIn}
+              disabled={isSigningIn || isProcessing}
               className="inline-flex items-center gap-3 px-5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl border border-slate-300 shadow-xs hover:shadow transition disabled:opacity-50 cursor-pointer"
             >
-              <svg className="w-5 h-5" viewBox="0 0 48 48">
-                <path
-                  fill="#EA4335"
-                  d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                />
-              </svg>
+              {isSigningIn ? (
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" viewBox="0 0 48 48">
+                  <path
+                    fill="#EA4335"
+                    d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                  />
+                </svg>
+              )}
               <span>{isSigningIn ? 'Menghubungkan Akun...' : 'Sign in with Google'}</span>
             </button>
             <p className="text-[11px] text-slate-500">
@@ -532,29 +650,87 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
           </div>
         ) : (
           <div className="space-y-5 mt-3">
-            {/* Option A: Create New Automatically (Requires Google Sign-in) */}
-            <div className="p-5 bg-gradient-to-r from-emerald-50/70 to-teal-50/70 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <PlusCircle className="w-4 h-4 text-emerald-600" />
-                  <span>Opsi 1: Buat Spreadsheet Database Baru Otomatis</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">
-                    Rekomendasi
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
-                  Sistem akan membuat file Google Spreadsheet baru di Google Drive akun Anda, menyiapkan 4 lembar tabel siap pakai (<em>Data Peserta</em>, <em>Data Soal</em>, <em>Pengaturan</em>, dan <em>Log Ujian & Pelanggaran</em>), serta mengisi seluruh data aplikasi saat ini secara otomatis.
-                </p>
+            {/* Option A: Create New Automatically (One-click Google Drive integration) */}
+            <div className="p-5 bg-gradient-to-r from-emerald-50/80 via-teal-50/60 to-blue-50/60 border border-emerald-200 rounded-2xl space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                    <PlusCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm sm:text-base">
+                      Opsi 1: Buat Database Spreadsheet Baru
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Otomatis membuat 4 lembar kerja: <em>Data Peserta</em>, <em>Data Soal</em>, <em>Pengaturan</em>, dan <em>Log Pelanggaran</em>.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold shrink-0">
+                  Rekomendasi
+                </span>
               </div>
 
-              <button
-                onClick={requestCreateNew}
-                disabled={isProcessing}
-                className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm hover:shadow transition flex items-center justify-center gap-2 shrink-0 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>{isProcessing ? 'Memproses...' : 'Buat Spreadsheet Baru'}</span>
-              </button>
+              {/* Action Buttons for Option 1 */}
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                {/* Primary Button: Automatically creates in Google Drive */}
+                <button
+                  type="button"
+                  onClick={requestCreateNew}
+                  disabled={isProcessing}
+                  className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-xs sm:text-sm shadow-sm hover:shadow transition flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>{processingStatusText}</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlusCircle className="w-4 h-4 text-white" />
+                      <span>Buat Spreadsheet Baru di Drive</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Secondary Fallback Button: opens sheets.new directly */}
+                <a
+                  href="https://sheets.new"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl text-xs sm:text-sm border border-slate-300 shadow-2xs hover:shadow-xs transition flex items-center justify-center gap-2"
+                >
+                  <ExternalLink className="w-4 h-4 text-slate-500" />
+                  <span>Buka Lembar Baru di Google (sheets.new)</span>
+                </a>
+
+                {/* Tertiary Tool: Copy format headers to clipboard */}
+                <button
+                  type="button"
+                  onClick={handleCopyFormatTemplate}
+                  className="py-2.5 px-3.5 bg-white hover:bg-slate-50 text-slate-600 font-medium rounded-xl text-xs border border-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {hasCopiedFormat ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700 font-bold">Format Kolom Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Salin Struktur Format Kolom</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>
+                  Tombol ini otomatis meminta izin akun Google Anda dan langsung membuat file spreadsheet di Drive tanpa repot mengatur kolom secara manual.
+                </span>
+              </div>
             </div>
 
             {/* Option B: Connect Existing Spreadsheet (Works with URL / ID) */}
@@ -644,13 +820,25 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
 
             {/* Sheet 3: Pengaturan */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-              <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-purple-500" />
-                <span>Lembar 3: "Pengaturan"</span>
+              <div className="font-bold text-slate-900 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  <span>Lembar 3: "Pengaturan" (Termasuk Username & Password Admin)</span>
+                </div>
+                <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">
+                  Login Proktor
+                </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Kolom baris 1: <code>Kunci Pengaturan | Nilai</code> (misal: <code>title</code>, <code>schoolName</code>, <code>enableAntiCheat</code>, dll.)
+                Kolom baris 1: <code>Kunci Pengaturan | Nilai</code>. Anda dapat mengubah login Admin langsung melalui baris berikut di Google Spreadsheet:
               </p>
+              <div className="text-[11px] text-slate-700 bg-white p-2.5 rounded border border-slate-200 font-mono space-y-1 overflow-x-auto">
+                <div className="text-purple-700 font-semibold">adminUsername | {settings.adminUsername || 'admin'}</div>
+                <div className="text-purple-700 font-semibold">adminPassword | {settings.adminPassword || 'admin123'}</div>
+                <div className="text-slate-500">title | {settings.title}</div>
+                <div className="text-slate-500">schoolName | {settings.schoolName}</div>
+                <div className="text-slate-500">enableAntiCheat | true</div>
+              </div>
             </div>
 
             {/* Sheet 4: Log Ujian & Pelanggaran */}
@@ -712,9 +900,9 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
                 <button
                   type="button"
                   onClick={handleExecuteConfirmedAction}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md transition cursor-pointer flex items-center gap-1.5"
                 >
-                  Lanjutkan
+                  <span>Lanjutkan</span>
                 </button>
               </div>
             </div>

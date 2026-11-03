@@ -18,7 +18,7 @@ import { ViolationModal } from './components/ViolationModal';
 import { CheckCircle2, Loader2, Sparkles, LogOut, Check, Award, ExternalLink } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { initAuth, getAccessToken } from './services/firebaseAuth';
-import { logEventToSpreadsheet } from './services/googleSheetsService';
+import { logEventToSpreadsheet, fetchSpreadsheetData } from './services/googleSheetsService';
 
 type AppScreen = 'login' | 'student_panel' | 'exam_active' | 'admin_panel';
 
@@ -38,6 +38,24 @@ export default function App() {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
+
+  // Auto-sync data (including admin username/password) from connected Google Spreadsheet on load
+  useEffect(() => {
+    if (settings.googleSpreadsheetId) {
+      getAccessToken()
+        .then((token) => fetchSpreadsheetData(token, settings.googleSpreadsheetId!))
+        .then((res) => {
+          if (res.peserta.length > 0) setPesertaList(res.peserta);
+          if (res.soal.length > 0) setSoalList(res.soal);
+          if (res.settings && Object.keys(res.settings).length > 0) {
+            setSettings((prev) => ({ ...prev, ...res.settings }));
+          }
+        })
+        .catch((err) => {
+          console.warn('Initial spreadsheet sync:', err);
+        });
+    }
+  }, [settings.googleSpreadsheetId]);
 
   // Navigation & session state
   const [activeScreen, setActiveScreen] = useState<AppScreen>('login');

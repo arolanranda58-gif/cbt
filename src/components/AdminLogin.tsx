@@ -36,7 +36,14 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
     ) {
       onLoginSuccess();
     } else {
-      setErrorMsg('Username atau Password Admin salah! (Default: admin / admin123)');
+      const isDefault = settings.adminUsername === 'admin' && settings.adminPassword === 'admin123';
+      setErrorMsg(
+        isDefault
+          ? 'Username atau Password Admin salah! (Bawaan: admin / admin123)'
+          : settings.googleSpreadsheetId
+          ? 'Username atau Password Admin salah! Pastikan sesuai dengan baris adminUsername dan adminPassword pada lembar Pengaturan di Google Spreadsheet.'
+          : 'Username atau Password Admin salah! Periksa kembali username dan password yang telah diatur.'
+      );
     }
   };
 
@@ -156,15 +163,21 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
         {/* Quick Demo Autofill */}
         <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between">
           <div className="text-xs text-slate-500">
-            Default: <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">admin</span> / <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">admin123</span>
+            {settings.googleSpreadsheetId ? (
+              <span className="text-emerald-700 font-medium">Tersinkron dengan Spreadsheet</span>
+            ) : (
+              <>
+                Bawaan: <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">{settings.adminUsername || 'admin'}</span>
+              </>
+            )}
           </div>
           <button
             type="button"
             onClick={handleFillDemo}
-            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 hover:underline"
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 hover:underline cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Isi Otomatis
+            Isi Kredensial Tersimpan
           </button>
         </div>
       </div>

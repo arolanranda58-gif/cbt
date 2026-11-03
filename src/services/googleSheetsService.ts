@@ -146,6 +146,8 @@ export const createSpreadsheetDatabase = async (
 
   const pengaturanValues = [
     ['Kunci Pengaturan', 'Nilai'],
+    ['adminUsername', settings.adminUsername || 'admin'],
+    ['adminPassword', settings.adminPassword || 'admin123'],
     ['title', settings.title],
     ['subtitle', settings.subtitle],
     ['schoolName', settings.schoolName],
@@ -161,26 +163,34 @@ export const createSpreadsheetDatabase = async (
     ['Waktu (Timestamp)', 'NISN', 'Nama Peserta', 'Mata Pelajaran', 'Aktivitas / Status', 'Keterangan'],
   ];
 
-  // 3. Batch update values
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        valueInputOption: 'USER_ENTERED',
-        data: [
-          { range: "'Data Peserta'!A1", values: pesertaValues },
-          { range: "'Data Soal'!A1", values: soalValues },
-          { range: "'Pengaturan'!A1", values: pengaturanValues },
-          { range: "'Log Ujian & Pelanggaran'!A1", values: logValues },
-        ],
-      }),
+  // 3. Batch update initial values safely
+  try {
+    const batchRes = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          valueInputOption: 'USER_ENTERED',
+          data: [
+            { range: "'Data Peserta'!A1", values: pesertaValues },
+            { range: "'Data Soal'!A1", values: soalValues },
+            { range: "'Pengaturan'!A1", values: pengaturanValues },
+            { range: "'Log Ujian & Pelanggaran'!A1", values: logValues },
+          ],
+        }),
+      }
+    );
+    if (!batchRes.ok) {
+      const errText = await batchRes.text().catch(() => '');
+      console.warn('Initial values batchUpdate non-fatal warning:', errText);
     }
-  );
+  } catch (batchErr) {
+    console.warn('Initial values batchUpdate non-fatal warning:', batchErr);
+  }
 
   return {
     id: spreadsheetId,
@@ -322,18 +332,24 @@ const fetchViaGviz = async (
 
   // Parse Settings
   settingsRows.forEach((row) => {
-    const key = String(row[0] || '').trim();
+    const rawKey = String(row[0] || '').trim();
     const val = String(row[1] || '').trim();
-    if (!key || val === undefined) return;
+    if (!rawKey || val === undefined) return;
+    const key = rawKey.toLowerCase().replace(/[-_\s]/g, '');
+
     if (key === 'title') parsedSettings.title = val;
-    if (key === 'subtitle') parsedSettings.subtitle = val;
-    if (key === 'schoolName') parsedSettings.schoolName = val;
-    if (key === 'logoUrl') parsedSettings.logoUrl = val;
-    if (key === 'enableAntiCheat') parsedSettings.enableAntiCheat = val === 'true';
-    if (key === 'blockShortcuts') parsedSettings.blockShortcuts = val === 'true';
-    if (key === 'blockRightClick') parsedSettings.blockRightClick = val === 'true';
-    if (key === 'fullScreenEnforced') parsedSettings.fullScreenEnforced = val === 'true';
-    if (key === 'blockNotifications') parsedSettings.blockNotifications = val === 'true';
+    else if (key === 'subtitle') parsedSettings.subtitle = val;
+    else if (key === 'schoolname' || key === 'namasekolah') parsedSettings.schoolName = val;
+    else if (key === 'logourl' || key === 'logo') parsedSettings.logoUrl = val;
+    else if (key === 'adminusername' || key === 'usernameadmin' || key === 'username' || key === 'useradmin') {
+      if (val) parsedSettings.adminUsername = val;
+    } else if (key === 'adminpassword' || key === 'passwordadmin' || key === 'password' || key === 'katasandi' || key === 'passadmin') {
+      if (val) parsedSettings.adminPassword = val;
+    } else if (key === 'enableanticheat' || key === 'anticheat') parsedSettings.enableAntiCheat = val === 'true';
+    else if (key === 'blockshortcuts') parsedSettings.blockShortcuts = val === 'true';
+    else if (key === 'blockrightclick') parsedSettings.blockRightClick = val === 'true';
+    else if (key === 'fullscreenenforced') parsedSettings.fullScreenEnforced = val === 'true';
+    else if (key === 'blocknotifications') parsedSettings.blockNotifications = val === 'true';
   });
 
   return {
@@ -445,18 +461,24 @@ export const fetchSpreadsheetData = async (
               });
             } else if (pengaturanSheet && rangeName.includes(pengaturanSheet)) {
               rows.forEach((row) => {
-                const key = row[0];
-                const val = row[1];
-                if (!key || val === undefined) return;
+                const rawKey = String(row[0] || '').trim();
+                const val = String(row[1] || '').trim();
+                if (!rawKey || val === undefined) return;
+                const key = rawKey.toLowerCase().replace(/[-_\s]/g, '');
+
                 if (key === 'title') parsedSettings.title = val;
-                if (key === 'subtitle') parsedSettings.subtitle = val;
-                if (key === 'schoolName') parsedSettings.schoolName = val;
-                if (key === 'logoUrl') parsedSettings.logoUrl = val;
-                if (key === 'enableAntiCheat') parsedSettings.enableAntiCheat = val === 'true';
-                if (key === 'blockShortcuts') parsedSettings.blockShortcuts = val === 'true';
-                if (key === 'blockRightClick') parsedSettings.blockRightClick = val === 'true';
-                if (key === 'fullScreenEnforced') parsedSettings.fullScreenEnforced = val === 'true';
-                if (key === 'blockNotifications') parsedSettings.blockNotifications = val === 'true';
+                else if (key === 'subtitle') parsedSettings.subtitle = val;
+                else if (key === 'schoolname' || key === 'namasekolah') parsedSettings.schoolName = val;
+                else if (key === 'logourl' || key === 'logo') parsedSettings.logoUrl = val;
+                else if (key === 'adminusername' || key === 'usernameadmin' || key === 'username' || key === 'useradmin') {
+                  if (val) parsedSettings.adminUsername = val;
+                } else if (key === 'adminpassword' || key === 'passwordadmin' || key === 'password' || key === 'katasandi' || key === 'passadmin') {
+                  if (val) parsedSettings.adminPassword = val;
+                } else if (key === 'enableanticheat' || key === 'anticheat') parsedSettings.enableAntiCheat = val === 'true';
+                else if (key === 'blockshortcuts') parsedSettings.blockShortcuts = val === 'true';
+                else if (key === 'blockrightclick') parsedSettings.blockRightClick = val === 'true';
+                else if (key === 'fullscreenenforced') parsedSettings.fullScreenEnforced = val === 'true';
+                else if (key === 'blocknotifications') parsedSettings.blockNotifications = val === 'true';
               });
             }
           });
@@ -531,6 +553,8 @@ export const syncAllDataToSpreadsheet = async (
 
   const pengaturanValues = [
     ['Kunci Pengaturan', 'Nilai'],
+    ['adminUsername', settings.adminUsername || 'admin'],
+    ['adminPassword', settings.adminPassword || 'admin123'],
     ['title', settings.title],
     ['subtitle', settings.subtitle],
     ['schoolName', settings.schoolName],
