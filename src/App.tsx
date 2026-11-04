@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Peserta, SoalUjian, PengaturanApp } from './types';
 import {
   getStoredPeserta,
@@ -27,6 +27,142 @@ export default function App() {
   const [soalList, setSoalList] = useState<SoalUjian[]>(() => getStoredSoal());
   const [settings, setSettings] = useState<PengaturanApp>(() => getStoredSettings());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isSyncingSpreadsheet, setIsSyncingSpreadsheet] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string>('');
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+
+  // Synchronous refs for accurate comparison without waiting for async state enqueuing
+  const pesertaListRef = React.useRef(pesertaList);
+  const soalListRef = React.useRef(soalList);
+  const settingsRef = React.useRef(settings);
+
+  useEffect(() => {
+    pesertaListRef.current = pesertaList;
+  }, [pesertaList]);
+
+  useEffect(() => {
+    soalListRef.current = soalList;
+  }, [soalList]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  // Centralized live sync function from Google Spreadsheet with change detection & merging
+  const syncDataFromSpreadsheet = useCallback(
+    async (silent = false): Promise<{ peserta: Peserta[]; soal: SoalUjian[] } | null> => {
+      const activeSpreadsheetId = settingsRef.current.googleSpreadsheetId;
+      if (!activeSpreadsheetId) return null;
+      if (!silent) setIsSyncingSpreadsheet(true);
+      try {
+        const token = await getAccessToken();
+        const res = await fetchSpreadsheetData(token, activeSpreadsheetId);
+
+        let pesertaChanged = false;
+        let soalChanged = false;
+        let settingsChanged = false;
+
+        if (res.peserta && res.peserta.length > 0) {
+          const currentPeserta = pesertaListRef.current;
+          // Merge live violations if students were already active in local state
+          const mergedPeserta = res.peserta.map((np) => {
+            const existing = currentPeserta.find(
+              (ep) =>
+                ep.nisn.trim().toLowerCase() === np.nisn.trim().toLowerCase() ||
+                (ep.nomor && np.nomor && ep.nomor === np.nomor && ep.nama.toLowerCase() === np.nama.toLowerCase())
+            );
+            if (existing) {
+              return {
+                ...np,
+                // Preserve violations logged locally during this active exam session
+                pelanggaranCount: Math.max(existing.pelanggaranCount || 0, np.pelanggaranCount || 0),
+                catatanPelanggaran:
+                  existing.catatanPelanggaran && existing.catatanPelanggaran.length > 0
+                    ? existing.catatanPelanggaran
+                    : np.catatanPelanggaran || [],
+              };
+            }
+            return np;
+          });
+
+          // Check if total count or content differs
+          if (
+            mergedPeserta.length !== currentPeserta.length ||
+            JSON.stringify(mergedPeserta) !== JSON.stringify(currentPeserta)
+          ) {
+            pesertaChanged = true;
+            setPesertaList(mergedPeserta);
+            saveStoredPeserta(mergedPeserta);
+            pesertaListRef.current = mergedPeserta;
+          }
+        }
+
+        if (res.soal && res.soal.length > 0) {
+          const currentSoal = soalListRef.current;
+          if (
+            res.soal.length !== currentSoal.length ||
+            JSON.stringify(res.soal) !== JSON.stringify(currentSoal)
+          ) {
+            soalChanged = true;
+            setSoalList(res.soal);
+            saveStoredSoal(res.soal);
+            soalListRef.current = res.soal;
+          }
+        }
+
+        if (res.settings && Object.keys(res.settings).length > 0) {
+          const curr = settingsRef.current;
+          let changed = false;
+          for (const [k, v] of Object.entries(res.settings)) {
+            if (v !== undefined && (curr as any)[k] !== v) {
+              changed = true;
+              break;
+            }
+          }
+          if (changed) {
+            settingsChanged = true;
+            const updated: PengaturanApp = {
+              ...curr,
+              ...res.settings,
+              googleSpreadsheetTitle: res.title || curr.googleSpreadsheetTitle,
+              googleSpreadsheetLastSynced: new Date().toLocaleTimeString('id-ID'),
+            };
+            setSettings(updated);
+            saveStoredSettings(updated);
+            settingsRef.current = updated;
+          }
+        }
+
+        const nowStr = new Date().toLocaleTimeString('id-ID');
+        setLastSyncTime(nowStr);
+
+        if (pesertaChanged || soalChanged || settingsChanged) {
+          const changesSummary: string[] = [];
+          if (pesertaChanged) changesSummary.push(`${res.peserta.length} peserta`);
+          if (soalChanged) changesSummary.push(`${res.soal.length} soal`);
+          if (settingsChanged) changesSummary.push('pengaturan');
+
+          setSyncToast(`Data otomatis disinkronkan dari Google Spreadsheet (${changesSummary.join(', ')})`);
+          setTimeout(() => setSyncToast(null), 4000);
+        } else if (!silent) {
+          setSyncToast(`Sinkronisasi berhasil! Data terbarui (${res.peserta.length} peserta, ${res.soal.length} soal)`);
+          setTimeout(() => setSyncToast(null), 3000);
+        }
+
+        return { peserta: res.peserta, soal: res.soal };
+      } catch (err: any) {
+        if (!silent) {
+          console.warn('Manual spreadsheet sync error:', err);
+          setSyncToast(err?.message || 'Sinkronisasi gagal. Pastikan spreadsheet dapat diakses.');
+          setTimeout(() => setSyncToast(null), 4500);
+        }
+        return null;
+      } finally {
+        if (!silent) setIsSyncingSpreadsheet(false);
+      }
+    },
+    []
+  );
 
   // Initialize Firebase Auth listener on load
   useEffect(() => {
@@ -39,23 +175,40 @@ export default function App() {
     };
   }, []);
 
-  // Auto-sync data (including admin username/password) from connected Google Spreadsheet on load
+  // Real-time synchronization: sync on mount, window focus, visibility change, and fast 4s polling
   useEffect(() => {
-    if (settings.googleSpreadsheetId) {
-      getAccessToken()
-        .then((token) => fetchSpreadsheetData(token, settings.googleSpreadsheetId!))
-        .then((res) => {
-          if (res.peserta.length > 0) setPesertaList(res.peserta);
-          if (res.soal.length > 0) setSoalList(res.soal);
-          if (res.settings && Object.keys(res.settings).length > 0) {
-            setSettings((prev) => ({ ...prev, ...res.settings }));
-          }
-        })
-        .catch((err) => {
-          console.warn('Initial spreadsheet sync:', err);
-        });
-    }
-  }, [settings.googleSpreadsheetId]);
+    if (!settings.googleSpreadsheetId) return;
+
+    // Immediate initial sync
+    syncDataFromSpreadsheet(true);
+
+    // Sync immediately when user switches back to CBT tab after editing Google Sheets
+    const handleFocus = () => {
+      syncDataFromSpreadsheet(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncDataFromSpreadsheet(true);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 4-second continuous polling while tab is active
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncDataFromSpreadsheet(true);
+      }
+    }, 4000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(interval);
+    };
+  }, [settings.googleSpreadsheetId, syncDataFromSpreadsheet]);
 
   // Navigation & session state
   const [activeScreen, setActiveScreen] = useState<AppScreen>('login');
@@ -364,9 +517,24 @@ export default function App() {
     newSoal: SoalUjian[],
     newSettings?: Partial<PengaturanApp>
   ) => {
-    if (newPeserta.length > 0) setPesertaList(newPeserta);
-    if (newSoal.length > 0) setSoalList(newSoal);
-    if (newSettings) setSettings((prev) => ({ ...prev, ...newSettings }));
+    if (newPeserta.length > 0) {
+      setPesertaList(newPeserta);
+      saveStoredPeserta(newPeserta);
+      pesertaListRef.current = newPeserta;
+    }
+    if (newSoal.length > 0) {
+      setSoalList(newSoal);
+      saveStoredSoal(newSoal);
+      soalListRef.current = newSoal;
+    }
+    if (newSettings) {
+      setSettings((prev) => {
+        const next = { ...prev, ...newSettings };
+        saveStoredSettings(next);
+        settingsRef.current = next;
+        return next;
+      });
+    }
   };
 
   return (
@@ -381,6 +549,14 @@ export default function App() {
         </div>
       )}
 
+      {/* Floating Auto-Sync Notification Toast */}
+      {syncToast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2.5 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs sm:text-sm font-semibold animate-in slide-in-from-top duration-300 border border-emerald-500">
+          <Sparkles className="w-4 h-4 text-emerald-200 shrink-0 animate-spin" />
+          <span>{syncToast}</span>
+        </div>
+      )}
+
       {/* Screen Router */}
       {activeScreen === 'login' && (
         <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-blue-50 via-indigo-50/50 to-slate-100">
@@ -391,12 +567,16 @@ export default function App() {
               settings={settings}
               onLoginSuccess={handleStudentLoginSuccess}
               onSwitchToAdmin={() => setLoginRole('admin')}
+              onRefreshSpreadsheet={() => syncDataFromSpreadsheet(false)}
+              isSyncingSpreadsheet={isSyncingSpreadsheet}
             />
           ) : (
             <AdminLogin
               settings={settings}
               onLoginSuccess={handleAdminLoginSuccess}
               onSwitchToStudent={() => setLoginRole('siswa')}
+              onRefreshSpreadsheet={() => syncDataFromSpreadsheet(false)}
+              isSyncingSpreadsheet={isSyncingSpreadsheet}
             />
           )}
         </div>
@@ -447,6 +627,9 @@ export default function App() {
           onSaveSettings={handleSaveSettings}
           onResetDefault={handleResetDefault}
           onDataLoadedFromSheet={handleDataLoadedFromSheet}
+          lastSyncTime={lastSyncTime}
+          isSyncing={isSyncingSpreadsheet}
+          onTriggerSync={() => syncDataFromSpreadsheet(false)}
         />
       )}
 

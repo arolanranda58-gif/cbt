@@ -44,6 +44,9 @@ interface GoogleSheetsManagerProps {
   pesertaList: Peserta[];
   soalList: SoalUjian[];
   onDataLoadedFromSheet: (peserta: Peserta[], soal: SoalUjian[], newSettings?: Partial<PengaturanApp>) => void;
+  lastSyncTime?: string;
+  isSyncing?: boolean;
+  onTriggerSync?: () => void;
 }
 
 export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
@@ -54,6 +57,9 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
   pesertaList,
   soalList,
   onDataLoadedFromSheet,
+  lastSyncTime,
+  isSyncing,
+  onTriggerSync,
 }) => {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -206,7 +212,30 @@ export const GoogleSheetsManager: React.FC<GoogleSheetsManagerProps> = ({
     });
   };
 
-  const requestPullFromSheet = () => {
+  const requestPullFromSheet = async () => {
+    setFeedback(null);
+    let token = await getAccessToken();
+
+    // If user is not yet logged in with Google, prompt sign-in so private spreadsheets can be read directly
+    if (!currentUser || !token) {
+      setIsProcessing(true);
+      setProcessingStatusText('Menghubungkan akun Google...');
+      try {
+        const res = await googleSignIn();
+        if (res) {
+          onUserChanged(res.user);
+          onUpdateSettings({
+            ...settings,
+            googleAccountEmail: res.user.email || undefined,
+          });
+        }
+      } catch (err: any) {
+        console.warn('Google sign-in skipped, will attempt public read:', err);
+      } finally {
+        setIsProcessing(false);
+      }
+    }
+
     setConfirmModal({
       isOpen: true,
       title: 'Tarik Data dari Google Spreadsheet?',
@@ -332,17 +361,36 @@ Waktu (Timestamp)\tNISN\tNama Peserta\tMata Pelajaran\tAktivitas / Status\tKeter
         if (!settings.googleSpreadsheetId) {
           throw new Error('Belum ada spreadsheet yang terhubung.');
         }
-        const data = await fetchSpreadsheetData(token, settings.googleSpreadsheetId);
-        onDataLoadedFromSheet(data.peserta, data.soal, data.settings);
+
+        let data;
+        try {
+          data = await fetchSpreadsheetData(token, settings.googleSpreadsheetId);
+        } catch (initialErr: any) {
+          // If fetch failed and token was missing or expired, prompt google sign-in to get access!
+          console.warn('Initial fetch failed, attempting Google authorization:', initialErr);
+          setProcessingStatusText('Menghubungkan akun Google untuk izin akses membaca...');
+          const authRes = await googleSignIn();
+          if (authRes?.accessToken) {
+            token = authRes.accessToken;
+            onUserChanged(authRes.user);
+            data = await fetchSpreadsheetData(token, settings.googleSpreadsheetId);
+          } else {
+            throw initialErr;
+          }
+        }
+
         const lastSync = new Date().toLocaleTimeString('id-ID');
-        onUpdateSettings({
+        const updatedSettings: PengaturanApp = {
           ...settings,
+          ...(data.settings || {}),
           googleSpreadsheetTitle: data.title || settings.googleSpreadsheetTitle,
           googleSpreadsheetLastSynced: lastSync,
-        });
+        };
+        onDataLoadedFromSheet(data.peserta, data.soal, updatedSettings);
+        onUpdateSettings(updatedSettings);
         setFeedback({
           type: 'success',
-          message: `Berhasil memuat ${data.peserta.length} data peserta dan ${data.soal.length} soal dari Google Spreadsheet!`,
+          message: `Berhasil memuat ${data.peserta.length} data peserta, ${data.soal.length} soal, dan pengaturan dari Google Spreadsheet pada ${lastSync}!`,
         });
       } else if (action === 'disconnect') {
         onUpdateSettings({
@@ -382,24 +430,45 @@ Waktu (Timestamp)\tNISN\tNama Peserta\tMata Pelajaran\tAktivitas / Status\tKeter
     setProcessingStatusText('Menghubungkan ke spreadsheet...');
     setFeedback(null);
     try {
-      const token = await getAccessToken();
-      const data = await fetchSpreadsheetData(token, cleanId);
+      let token = await getAccessToken();
+      let data;
+      try {
+        data = await fetchSpreadsheetData(token, cleanId);
+      } catch (firstErr: any) {
+        // If private sheet access failed, prompt Google Sign-in to get access!
+        console.warn('Initial fetch failed, prompting Google Sign-in:', firstErr);
+        setProcessingStatusText('Menghubungkan akun Google untuk izin akses membaca...');
+        const authRes = await googleSignIn();
+        if (authRes?.accessToken) {
+          token = authRes.accessToken;
+          onUserChanged(authRes.user);
+          onUpdateSettings({
+            ...settings,
+            googleAccountEmail: authRes.user.email || undefined,
+          });
+          data = await fetchSpreadsheetData(token, cleanId);
+        } else {
+          throw firstErr;
+        }
+      }
       const sheetUrl = `https://docs.google.com/spreadsheets/d/${cleanId}/edit`;
       const lastSync = new Date().toLocaleTimeString('id-ID');
-
-      onDataLoadedFromSheet(data.peserta, data.soal, data.settings);
-      onUpdateSettings({
+      const updatedSettings: PengaturanApp = {
         ...settings,
+        ...(data.settings || {}),
         googleSpreadsheetId: cleanId,
         googleSpreadsheetUrl: sheetUrl,
-        googleSpreadsheetTitle: data.title || `Spreadsheet (${cleanId.slice(0, 8)}...)`,
+        googleSpreadsheetTitle: data.title || settings.googleSpreadsheetTitle || `Spreadsheet (${cleanId.slice(0, 8)}...)`,
         googleSpreadsheetLastSynced: lastSync,
-      });
+      };
+
+      onDataLoadedFromSheet(data.peserta, data.soal, updatedSettings);
+      onUpdateSettings(updatedSettings);
 
       setInputUrl('');
-      const authNotice = currentUser
+      const authNotice = currentUser || token
         ? 'Terhubung penuh (Mode Baca & Tulis).'
-        : 'Terhubung dalam Mode Baca. Anda dapat masuk dengan akun Google kapan saja jika ingin mengirim data atau mencatat log live ke spreadsheet.';
+        : 'Terhubung dalam Mode Baca. Masuk dengan Google kapan saja untuk mengaktifkan sinkronisasi simpan.';
 
       setFeedback({
         type: 'success',
@@ -618,6 +687,46 @@ Waktu (Timestamp)\tNISN\tNama Peserta\tMata Pelajaran\tAktivitas / Status\tKeter
               </div>
             </div>
 
+            {/* Real-time Auto-Sync Status Card */}
+            <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <span className="relative flex h-3.5 w-3.5 shrink-0 mt-1 sm:mt-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+                </span>
+                <div>
+                  <div className="text-xs sm:text-sm font-bold text-emerald-950 flex items-center gap-2 flex-wrap">
+                    <span>Sinkronisasi Otomatis Real-time Aktif</span>
+                    {isSyncing && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-medium">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Memeriksa pembaruan spreadsheet...
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                    Setiap perubahan data peserta, password, kelas, atau soal di Google Spreadsheet akan otomatis terdeteksi dan tersinkron ke aplikasi secara langsung tanpa harus menekan tombol apa pun.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 pt-1 sm:pt-0">
+                <span className="text-[11px] text-slate-500">
+                  Cek terakhir: <strong className="text-slate-700 font-mono">{lastSyncTime || settings.googleSpreadsheetLastSynced || 'Baru saja'}</strong>
+                </span>
+                {onTriggerSync && (
+                  <button
+                    type="button"
+                    onClick={onTriggerSync}
+                    disabled={isSyncing || isProcessing}
+                    className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-700 transition cursor-pointer"
+                    title="Periksa perubahan sekarang"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Sync Action Buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
@@ -626,7 +735,7 @@ Waktu (Timestamp)\tNISN\tNama Peserta\tMata Pelajaran\tAktivitas / Status\tKeter
                 className="py-2.5 px-4 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 <DownloadCloud className="w-4 h-4 text-blue-600" />
-                <span>Tarik Data dari Spreadsheet</span>
+                <span>Tarik Data Manual Sekarang</span>
               </button>
 
               <button

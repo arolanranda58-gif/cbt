@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Peserta, SoalUjian, PengaturanApp } from '../types';
-import { UserCheck, ShieldAlert, Award, BookOpen, School, Layers, IdCard, LogIn, Sparkles, CheckCircle2 } from 'lucide-react';
+import { UserCheck, ShieldAlert, Award, BookOpen, School, Layers, IdCard, LogIn, Sparkles, CheckCircle2, RefreshCw } from 'lucide-react';
 
 interface StudentLoginProps {
   pesertaList: Peserta[];
@@ -8,6 +8,8 @@ interface StudentLoginProps {
   settings: PengaturanApp;
   onLoginSuccess: (student: Peserta, selectedSoal: SoalUjian) => void;
   onSwitchToAdmin: () => void;
+  onRefreshSpreadsheet?: () => Promise<{ peserta: Peserta[]; soal: SoalUjian[] } | null>;
+  isSyncingSpreadsheet?: boolean;
 }
 
 export const StudentLogin: React.FC<StudentLoginProps> = ({
@@ -16,6 +18,8 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
   settings,
   onLoginSuccess,
   onSwitchToAdmin,
+  onRefreshSpreadsheet,
+  isSyncingSpreadsheet,
 }) => {
   const [nisn, setNisn] = useState('');
   const [tingkat, setTingkat] = useState('');
@@ -69,7 +73,7 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
     setErrorMsg(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -91,18 +95,39 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
       return;
     }
 
-    // Find student
-    const student = pesertaList.find(
-      (p) =>
-        p.nisn.toLowerCase() === cleanNisn.toLowerCase() &&
-        p.tingkat === tingkat &&
-        p.kelas === kelas
-    );
+    const matchId = (p: Peserta) =>
+      (p.nisn.trim().toLowerCase() === cleanNisn.toLowerCase() ||
+        (p.nomor && p.nomor.trim().toLowerCase() === cleanNisn.toLowerCase())) &&
+      p.tingkat === tingkat &&
+      p.kelas === kelas;
+
+    // Find student in current in-memory list
+    let student = pesertaList.find(matchId);
+
+    let activeSoalList = soalList;
+
+    // If not found and spreadsheet is connected, automatically sync from Google Spreadsheet first!
+    if (!student && settings.googleSpreadsheetId && onRefreshSpreadsheet) {
+      setErrorMsg('Menyinkronkan data terbaru dari Google Spreadsheet...');
+      try {
+        const freshData = await onRefreshSpreadsheet();
+        if (freshData?.peserta && freshData.peserta.length > 0) {
+          student = freshData.peserta.find(matchId);
+        }
+        if (freshData?.soal) {
+          activeSoalList = freshData.soal;
+        }
+      } catch (e) {
+        console.warn('Sync on login attempt:', e);
+      }
+    }
 
     if (!student) {
       // Check if NISN exists under another class
       const foundAnywhere = pesertaList.find(
-        (p) => p.nisn.toLowerCase() === cleanNisn.toLowerCase()
+        (p) =>
+          p.nisn.trim().toLowerCase() === cleanNisn.toLowerCase() ||
+          (p.nomor && p.nomor.trim().toLowerCase() === cleanNisn.toLowerCase())
       );
       if (foundAnywhere) {
         setErrorMsg(
@@ -122,7 +147,7 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
     }
 
     // Find exam details
-    const selectedSoal = soalList.find(
+    const selectedSoal = activeSoalList.find(
       (s) => s.tingkat === tingkat && s.mataPelajaran === mataPelajaran
     );
 
@@ -131,6 +156,7 @@ export const StudentLogin: React.FC<StudentLoginProps> = ({
       return;
     }
 
+    setErrorMsg(null);
     onLoginSuccess(student, selectedSoal);
   };
 

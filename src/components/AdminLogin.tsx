@@ -6,19 +6,24 @@ interface AdminLoginProps {
   settings: PengaturanApp;
   onLoginSuccess: () => void;
   onSwitchToStudent: () => void;
+  onRefreshSpreadsheet?: () => Promise<{ peserta: any[]; soal: any[] } | null>;
+  isSyncingSpreadsheet?: boolean;
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({
   settings,
   onLoginSuccess,
   onSwitchToStudent,
+  onRefreshSpreadsheet,
+  isSyncingSpreadsheet,
 }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isCheckingSync, setIsCheckingSync] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -35,16 +40,42 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
       cleanPass === settings.adminPassword
     ) {
       onLoginSuccess();
-    } else {
-      const isDefault = settings.adminUsername === 'admin' && settings.adminPassword === 'admin123';
-      setErrorMsg(
-        isDefault
-          ? 'Username atau Password Admin salah! (Bawaan: admin / admin123)'
-          : settings.googleSpreadsheetId
-          ? 'Username atau Password Admin salah! Pastikan sesuai dengan baris adminUsername dan adminPassword pada lembar Pengaturan di Google Spreadsheet.'
-          : 'Username atau Password Admin salah! Periksa kembali username dan password yang telah diatur.'
-      );
+      return;
     }
+
+    // If initial check fails, try syncing fresh credentials from Google Spreadsheet if connected
+    if (settings.googleSpreadsheetId && onRefreshSpreadsheet) {
+      setIsCheckingSync(true);
+      try {
+        await onRefreshSpreadsheet();
+        // Check updated settings from local storage
+        const latestRaw = localStorage.getItem('cbt_ujian_settings_v1');
+        if (latestRaw) {
+          const latestSettings = JSON.parse(latestRaw);
+          if (
+            cleanUser === latestSettings.adminUsername &&
+            cleanPass === latestSettings.adminPassword
+          ) {
+            setIsCheckingSync(false);
+            onLoginSuccess();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Sync attempt on admin login failed:', err);
+      } finally {
+        setIsCheckingSync(false);
+      }
+    }
+
+    const isDefault = settings.adminUsername === 'admin' && settings.adminPassword === 'admin123';
+    setErrorMsg(
+      isDefault
+        ? 'Username atau Password Admin salah! (Bawaan: admin / admin123)'
+        : settings.googleSpreadsheetId
+        ? 'Username atau Password Admin salah! Pastikan sesuai dengan baris adminUsername dan adminPassword pada lembar Pengaturan di Google Spreadsheet.'
+        : 'Username atau Password Admin salah! Periksa kembali username dan password yang telah diatur.'
+    );
   };
 
   const handleFillDemo = () => {

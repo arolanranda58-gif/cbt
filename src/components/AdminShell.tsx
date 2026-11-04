@@ -42,6 +42,9 @@ interface AdminShellProps {
   onSaveSettings: (settings: PengaturanApp) => void;
   onResetDefault: () => void;
   onDataLoadedFromSheet: (peserta: Peserta[], soal: SoalUjian[], newSettings?: Partial<PengaturanApp>) => void;
+  lastSyncTime?: string;
+  isSyncing?: boolean;
+  onTriggerSync?: () => void;
 }
 
 type AdminView = 'dashboard' | 'peserta' | 'soal' | 'spreadsheet' | 'pengaturan';
@@ -66,6 +69,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({
   onSaveSettings,
   onResetDefault,
   onDataLoadedFromSheet,
+  lastSyncTime,
+  isSyncing,
+  onTriggerSync,
 }) => {
   const [currentView, setCurrentView] = useState<AdminView>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -196,12 +202,18 @@ export const AdminShell: React.FC<AdminShellProps> = ({
             {settings.googleSpreadsheetId ? (
               <button
                 onClick={() => setCurrentView('spreadsheet')}
-                title="Google Spreadsheet Terhubung (Klik untuk Kelola)"
+                title={`Google Spreadsheet Terhubung (Auto-Sync Aktif - Terakhir: ${lastSyncTime || 'Baru saja'})`}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-semibold transition cursor-pointer"
               >
+                <span className={`w-2 h-2 rounded-full bg-emerald-500 ${isSyncing ? 'animate-ping' : 'animate-pulse'}`} />
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="hidden sm:inline">Database: Spreadsheet Aktif</span>
-                <span className="sm:hidden">Spreadsheet</span>
+                <span className="hidden sm:inline">Auto-Sync Aktif</span>
+                <span className="sm:hidden">Auto-Sync</span>
+                {lastSyncTime && (
+                  <span className="text-[10px] text-emerald-600/80 font-mono hidden md:inline">
+                    ({lastSyncTime})
+                  </span>
+                )}
               </button>
             ) : (
               <button
@@ -247,6 +259,10 @@ export const AdminShell: React.FC<AdminShellProps> = ({
                 onDeletePeserta={onDeletePeserta}
                 onToggleStatus={onToggleStatusPeserta}
                 onUnlockAll={onUnlockAll}
+                isSyncing={isSyncing}
+                lastSyncTime={lastSyncTime}
+                onTriggerSync={onTriggerSync}
+                googleSpreadsheetId={settings.googleSpreadsheetId}
               />
             )}
 
@@ -268,6 +284,9 @@ export const AdminShell: React.FC<AdminShellProps> = ({
                 pesertaList={pesertaList}
                 soalList={soalList}
                 onDataLoadedFromSheet={onDataLoadedFromSheet}
+                lastSyncTime={lastSyncTime}
+                isSyncing={isSyncing}
+                onTriggerSync={onTriggerSync}
               />
             )}
 

@@ -14,7 +14,9 @@ import {
   Lock,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface AdminPesertaProps {
@@ -24,6 +26,10 @@ interface AdminPesertaProps {
   onDeletePeserta: (id: string) => void;
   onToggleStatus: (id: string) => void;
   onUnlockAll: () => void;
+  isSyncing?: boolean;
+  lastSyncTime?: string;
+  onTriggerSync?: () => void;
+  googleSpreadsheetId?: string;
 }
 
 export const AdminPeserta: React.FC<AdminPesertaProps> = ({
@@ -33,10 +39,31 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
   onDeletePeserta,
   onToggleStatus,
   onUnlockAll,
+  isSyncing,
+  lastSyncTime,
+  onTriggerSync,
+  googleSpreadsheetId,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTingkat, setFilterTingkat] = useState('Semua');
   const [filterStatus, setFilterStatus] = useState('Semua');
+
+  // Compute available tingkat dynamically from pesertaList (supports SD 1-6, SMP 7-9, SMA 10-12)
+  const availableTingkatOptions = useMemo(() => {
+    const set = new Set<string>();
+    pesertaList.forEach((p) => {
+      if (p.tingkat && p.tingkat.trim()) set.add(p.tingkat.trim());
+    });
+    if (set.size === 0) {
+      return ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+    }
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [pesertaList]);
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -69,7 +96,7 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
     setFormNomor(String(pesertaList.length + 1).padStart(3, '0'));
     setFormNisn('');
     setFormNama('');
-    setFormTingkat('10');
+    setFormTingkat(availableTingkatOptions[0] || '10');
     setFormKelas('Ruang 01');
     setFormStatus('Aktif');
     setFormError(null);
@@ -173,10 +200,27 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
           </h2>
           <p className="text-xs text-slate-500">
             Total {pesertaList.length} peserta terdaftar • {filteredPeserta.length} ditampilkan
+            {googleSpreadsheetId && (
+              <span className="text-emerald-600 font-medium ml-1.5 inline-flex items-center gap-1">
+                • <FileSpreadsheet className="w-3 h-3 inline" /> Auto-sync Spreadsheet Aktif
+                {lastSyncTime && <span className="text-slate-400">({lastSyncTime})</span>}
+              </span>
+            )}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {googleSpreadsheetId && onTriggerSync && (
+            <button
+              onClick={onTriggerSync}
+              disabled={isSyncing}
+              title={`Sinkronkan data peserta sekarang dari Google Spreadsheet (${lastSyncTime || 'Baru saja'})`}
+              className="py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkron Spreadsheet'}</span>
+            </button>
+          )}
           <button
             onClick={onUnlockAll}
             className="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
@@ -221,12 +265,14 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
             <select
               value={filterTingkat}
               onChange={(e) => setFilterTingkat(e.target.value)}
-              className="bg-transparent font-semibold focus:outline-none"
+              className="bg-transparent font-semibold focus:outline-none cursor-pointer"
             >
-              <option value="Semua">Semua</option>
-              <option value="10">Kelas 10</option>
-              <option value="11">Kelas 11</option>
-              <option value="12">Kelas 12</option>
+              <option value="Semua">Semua Tingkat</option>
+              {availableTingkatOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  Kelas {opt}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -235,7 +281,7 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-transparent font-semibold focus:outline-none"
+              className="bg-transparent font-semibold focus:outline-none cursor-pointer"
             >
               <option value="Semua">Semua</option>
               <option value="Aktif">Aktif</option>
@@ -420,9 +466,18 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
                     onChange={(e) => setFormTingkat(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="10">Kelas 10</option>
-                    <option value="11">Kelas 11</option>
-                    <option value="12">Kelas 12</option>
+                    {Array.from(
+                      new Set([
+                        ...availableTingkatOptions,
+                        '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+                      ])
+                    )
+                      .sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0))
+                      .map((t) => (
+                        <option key={t} value={t}>
+                          Kelas {t}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -543,9 +598,18 @@ export const AdminPeserta: React.FC<AdminPesertaProps> = ({
                     onChange={(e) => setFormTingkat(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="10">Kelas 10</option>
-                    <option value="11">Kelas 11</option>
-                    <option value="12">Kelas 12</option>
+                    {Array.from(
+                      new Set([
+                        ...availableTingkatOptions,
+                        '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+                      ])
+                    )
+                      .sort((a, b) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0))
+                      .map((t) => (
+                        <option key={t} value={t}>
+                          Kelas {t}
+                        </option>
+                      ))}
                   </select>
                 </div>
 

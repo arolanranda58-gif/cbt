@@ -27,6 +27,10 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
   const [formData, setFormData] = useState<PengaturanApp>({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  React.useEffect(() => {
+    setFormData({ ...settings });
+  }, [settings]);
+
   const LOGO_PRESETS = [
     {
       name: 'Kemendikbud / Tut Wuri',
